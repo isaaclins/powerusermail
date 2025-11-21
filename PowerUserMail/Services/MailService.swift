@@ -1,6 +1,6 @@
 import AuthenticationServices
-import Foundation
 import CryptoKit
+import Foundation
 
 enum MailServiceError: Error, LocalizedError {
     case authenticationRequired
@@ -90,7 +90,8 @@ final class GmailService: NSObject, MailService {
         // In a real app, you would fetch the user profile here to get the email/name
         let newAccount = Account(
             provider: provider, emailAddress: "user@gmail.com", displayName: "Gmail User",
-            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, isAuthenticated: true)
+            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+            isAuthenticated: true)
         account = newAccount
         return newAccount
     }
@@ -125,7 +126,10 @@ final class OutlookService: NSObject, MailService {
         tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         clientId: "YOUR_MICROSOFT_CLIENT_ID",
         redirectUri: "msauth.com.isaaclins.PowerUserMail://auth",
-        scopes: ["https://graph.microsoft.com/mail.read", "https://graph.microsoft.com/mail.send", "offline_access", "User.Read"]
+        scopes: [
+            "https://graph.microsoft.com/mail.read", "https://graph.microsoft.com/mail.send",
+            "offline_access", "User.Read",
+        ]
     )
 
     func authenticate() async throws -> Account {
@@ -133,7 +137,8 @@ final class OutlookService: NSObject, MailService {
         // In a real app, you would fetch the user profile here
         let newAccount = Account(
             provider: provider, emailAddress: "user@outlook.com", displayName: "Outlook User",
-            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, isAuthenticated: true)
+            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+            isAuthenticated: true)
         account = newAccount
         return newAccount
     }
@@ -163,7 +168,7 @@ struct TokenResponse: Codable {
     let accessToken: String
     let refreshToken: String?
     let expiresIn: Int?
-    
+
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
@@ -173,9 +178,11 @@ struct TokenResponse: Codable {
 
 extension MailService {
     // Helper to perform the full OAuth flow
-    func performOAuthFlow(config: OAuthConfiguration, provider: MailProvider) async throws -> TokenResponse {
+    func performOAuthFlow(config: OAuthConfiguration, provider: MailProvider) async throws
+        -> TokenResponse
+    {
         let pkce = PKCE()
-        
+
         // 1. Construct Authorization URL
         var components = URLComponents(string: config.authEndpoint)!
         components.queryItems = [
@@ -184,15 +191,16 @@ extension MailService {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "scope", value: config.scopes.joined(separator: " ")),
             URLQueryItem(name: "code_challenge", value: pkce.codeChallenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
-        
+
         guard let authURL = components.url else {
             throw MailServiceError.custom("Invalid auth URL")
         }
-        
+
         // 2. Present ASWebAuthenticationSession
-        let callbackURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+        let callbackURL = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<URL, Error>) in
             let session = ASWebAuthenticationSession(
                 url: authURL,
                 callbackURLScheme: URL(string: config.redirectUri)?.scheme
@@ -207,49 +215,57 @@ extension MailService {
                 }
                 continuation.resume(returning: callbackURL)
             }
-            
-            session.presentationContextProvider = self as? ASWebAuthenticationPresentationContextProviding
+
+            session.presentationContextProvider =
+                self as? ASWebAuthenticationPresentationContextProviding
             session.prefersEphemeralWebBrowserSession = true
             session.start()
         }
-        
+
         // 3. Extract Authorization Code
-        guard let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-            .queryItems?.first(where: { $0.name == "code" })?.value else {
+        guard
+            let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "code" })?.value
+        else {
             throw MailServiceError.custom("No authorization code found")
         }
-        
+
         // 4. Exchange Code for Tokens
         return try await exchangeCodeForToken(code: code, pkce: pkce, config: config)
     }
-    
-    private func exchangeCodeForToken(code: String, pkce: PKCE, config: OAuthConfiguration) async throws -> TokenResponse {
+
+    private func exchangeCodeForToken(code: String, pkce: PKCE, config: OAuthConfiguration)
+        async throws -> TokenResponse
+    {
         var request = URLRequest(url: URL(string: config.tokenEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
+
         let bodyParams = [
             "client_id": config.clientId,
             "code": code,
             "redirect_uri": config.redirectUri,
             "grant_type": "authorization_code",
-            "code_verifier": pkce.codeVerifier
+            "code_verifier": pkce.codeVerifier,
         ]
-        
-        request.httpBody = bodyParams
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
+
+        request.httpBody =
+            bodyParams
+            .map {
+                "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+            }
             .joined(separator: "&")
             .data(using: .utf8)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             if let errorText = String(data: data, encoding: .utf8) {
                 print("Token exchange failed: \(errorText)")
             }
             throw MailServiceError.custom("Token exchange failed")
         }
-        
+
         let decoder = JSONDecoder()
         return try decoder.decode(TokenResponse.self, from: data)
     }
