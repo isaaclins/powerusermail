@@ -1,5 +1,22 @@
-/PowerUserMail
-/PowerUserMail.xcodeproj
-/PowerUserMailTests
-/PowerUserMailUITests
-/build
+# macOS
+.DS_Store
+
+# Xcode
+build/
+*.derivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.scm-blueprint
+*.xcscheme
+!default.xcscheme
+
+# Swift Package Manager
+.swiftpm/xcode/
+.build/
+
+# User settings
+xcuserdata/
