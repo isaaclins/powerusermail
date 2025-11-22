@@ -10,7 +10,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var accountViewModel = AccountViewModel()
-    @State private var selectedThread: EmailThread?
+    @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
     @State private var isShowingCommandPalette = false
     @State private var commandSearch = ""
@@ -66,8 +66,8 @@ struct ContentView: View {
 
     private func mainSplitView(service: MailService) -> some View {
         NavigationSplitView {
-            InboxView(service: service, selectedThread: $selectedThread)
-                .navigationTitle("Inbox")
+            InboxView(service: service, selectedConversation: $selectedConversation)
+                .navigationTitle("Chats")
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button(action: openCompose) {
@@ -79,12 +79,10 @@ struct ContentView: View {
                     }
                 }
         } detail: {
-            if let thread = selectedThread,
-                let email = thread.lastMessage
-            {
-                EmailDetailView(email: email)
+            if let conversation = selectedConversation {
+                ChatView(conversation: conversation)
             } else {
-                ContentUnavailableView("No Message Selected", systemImage: "tray")
+                ContentUnavailableView("No Chat Selected", systemImage: "bubble.left.and.bubble.right")
             }
         }
     }

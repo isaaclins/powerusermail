@@ -152,3 +152,13 @@ struct DraftMessage: Identifiable, Hashable {
         self.isDirty = isDirty
     }
 }
+
+struct Conversation: Identifiable, Hashable {
+    let id: String
+    let person: String
+    let messages: [Email]
+    
+    var latestMessage: Email? {
+        messages.max(by: { $0.receivedAt < $1.receivedAt })
+    }
+}
