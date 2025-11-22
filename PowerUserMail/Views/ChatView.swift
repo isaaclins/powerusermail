@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     let conversation: Conversation
-    
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -26,28 +26,28 @@ struct ChatView: View {
 
 struct ChatBubble: View {
     let email: Email
-    
+
     // In a real app, check if email.from == myAccount.email
-    var isMe: Bool { false } 
-    
+    var isMe: Bool { false }
+
     var body: some View {
         HStack {
             if isMe { Spacer() }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 if !email.subject.isEmpty {
                     Text(email.subject)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
-                // We use the preview for the chat bubble text for now, 
+
+                // We use the preview for the chat bubble text for now,
                 // or we could try to strip HTML from body.
                 // Using preview is safer for a chat list.
-                Text(email.preview) 
+                Text(email.preview)
                     .font(.body)
                     .foregroundStyle(isMe ? .white : .primary)
-                
+
                 Text(email.receivedAt, style: .time)
                     .font(.caption2)
                     .foregroundStyle(isMe ? .white.opacity(0.8) : .secondary)
@@ -73,7 +73,7 @@ struct ChatBubble: View {
                     }
                 }
             }
-            
+
             if !isMe { Spacer() }
         }
     }

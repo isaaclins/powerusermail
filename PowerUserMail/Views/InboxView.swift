@@ -32,7 +32,7 @@ struct InboxView: View {
                             }
                         }
                         if let last = conversation.latestMessage {
-                            Text(last.subject) // Show Subject as the "preview" context
+                            Text(last.subject)  // Show Subject as the "preview" context
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)

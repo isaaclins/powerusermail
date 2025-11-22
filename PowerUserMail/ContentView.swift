@@ -82,7 +82,8 @@ struct ContentView: View {
             if let conversation = selectedConversation {
                 ChatView(conversation: conversation)
             } else {
-                ContentUnavailableView("No Chat Selected", systemImage: "bubble.left.and.bubble.right")
+                ContentUnavailableView(
+                    "No Chat Selected", systemImage: "bubble.left.and.bubble.right")
             }
         }
     }

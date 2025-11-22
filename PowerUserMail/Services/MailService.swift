@@ -316,49 +316,61 @@ final class GmailService: NSObject, MailService {
 
         var allThreads: [EmailThread] = []
         var nextPageToken: String? = nil
-        
+
         // Safety limit to prevent infinite loops during dev
-        let maxPages = 5 
+        let maxPages = 5
         var pageCount = 0
 
         repeat {
-            var components = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
+            var components = URLComponents(
+                string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
             var queryItems = [URLQueryItem(name: "maxResults", value: "20")]
             if let pageToken = nextPageToken {
                 queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
             }
             components.queryItems = queryItems
-            
+
             var listRequest = URLRequest(url: components.url!)
             listRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-            let listResponse: GmailThreadListResponse = try await URLSession.shared.data(for: listRequest)
-            
+            let listResponse: GmailThreadListResponse = try await URLSession.shared.data(
+                for: listRequest)
+
             nextPageToken = listResponse.nextPageToken
-            
+
             if let threads = listResponse.threads {
                 // Fetch details for this batch
                 await withTaskGroup(of: EmailThread?.self) { group in
                     for threadSummary in threads {
                         group.addTask {
                             do {
-                                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)")!
+                                let detailURL = URL(
+                                    string:
+                                        "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)"
+                                )!
                                 var detailRequest = URLRequest(url: detailURL)
-                                detailRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                                let threadDetail: GmailThreadDetail = try await URLSession.shared.data(for: detailRequest)
-                                
-                                let messages = threadDetail.messages.map { self.mapGmailMessage($0) }
+                                detailRequest.setValue(
+                                    "Bearer \(token)", forHTTPHeaderField: "Authorization")
+                                let threadDetail: GmailThreadDetail = try await URLSession.shared
+                                    .data(for: detailRequest)
+
+                                let messages = threadDetail.messages.map {
+                                    self.mapGmailMessage($0)
+                                }
                                 let subject = messages.first?.subject ?? "No Subject"
-                                let participants = Array(Set(messages.map { $0.from } + messages.flatMap { $0.to }))
-                                
-                                return EmailThread(id: threadDetail.id, subject: subject, messages: messages, participants: participants)
+                                let participants = Array(
+                                    Set(messages.map { $0.from } + messages.flatMap { $0.to }))
+
+                                return EmailThread(
+                                    id: threadDetail.id, subject: subject, messages: messages,
+                                    participants: participants)
                             } catch {
                                 print("Failed to fetch thread details: \(error)")
                                 return nil
                             }
                         }
                     }
-                    
+
                     for await thread in group {
                         if let thread = thread {
                             allThreads.append(thread)
@@ -366,7 +378,7 @@ final class GmailService: NSObject, MailService {
                     }
                 }
             }
-            
+
             pageCount += 1
         } while nextPageToken != nil && pageCount < maxPages
 
@@ -486,8 +498,9 @@ final class OutlookService: NSObject, MailService {
         let token = try await ensureValidAccessToken(for: provider, config: config)
 
         var allMessages: [OutlookMessage] = []
-        var nextLink: String? = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$select=id,conversationId,subject,bodyPreview,body,from,toRecipients,receivedDateTime,isRead"
-        
+        var nextLink: String? =
+            "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$select=id,conversationId,subject,bodyPreview,body,from,toRecipients,receivedDateTime,isRead"
+
         let maxPages = 5
         var pageCount = 0
 
@@ -495,7 +508,8 @@ final class OutlookService: NSObject, MailService {
             var request = URLRequest(url: URL(string: link)!)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-            let response: OutlookMessageListResponse = try await URLSession.shared.data(for: request)
+            let response: OutlookMessageListResponse = try await URLSession.shared.data(
+                for: request)
             allMessages.append(contentsOf: response.value)
             nextLink = response.nextLink
             pageCount += 1
