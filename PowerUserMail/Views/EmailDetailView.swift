@@ -11,7 +11,7 @@ struct EmailDetailView: View {
                     .font(.title2)
                     .bold()
                     .textSelection(.enabled)
-                
+
                 HStack {
                     Text("From:")
                         .foregroundStyle(.secondary)
@@ -20,7 +20,7 @@ struct EmailDetailView: View {
                         .textSelection(.enabled)
                 }
                 .font(.callout)
-                
+
                 HStack {
                     Text("To:")
                         .foregroundStyle(.secondary)
@@ -31,9 +31,9 @@ struct EmailDetailView: View {
             }
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
-            
+
             Divider()
-            
+
             // Content
             WebView(htmlContent: email.body)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
