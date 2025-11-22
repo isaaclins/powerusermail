@@ -283,7 +283,6 @@ final class GmailService: NSObject, MailService {
         scopes: ["https://mail.google.com/"]
     )
 
-
     func authenticate() async throws -> Account {
         let tokens = try await performOAuthFlow(config: config, provider: provider)
 

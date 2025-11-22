@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 final class AccountViewModel: ObservableObject {
@@ -19,7 +19,7 @@ final class AccountViewModel: ObservableObject {
             defaults[.outlook] = OutlookService()
             self.services = defaults
         }
-        
+
         // Load stored accounts
         self.accounts = self.services.values.compactMap { $0.account }
     }
