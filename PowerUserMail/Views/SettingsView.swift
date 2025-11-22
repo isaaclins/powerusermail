@@ -49,12 +49,28 @@ struct SettingsView: View {
                         .font(.headline)
 
                     ForEach(accountViewModel.accounts) { account in
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text(account.emailAddress)
+                        Button {
+                            accountViewModel.selectedAccount = account
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text(account.emailAddress)
+                                    .font(.body)
+                                Spacer()
+                                Image(systemName: "arrow.right.circle")
+                                    .foregroundStyle(.blue)
+                            }
+                            .padding()
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                            )
                         }
-                        .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                        .focusable(false)
                     }
                 }
                 .padding(.top, 20)

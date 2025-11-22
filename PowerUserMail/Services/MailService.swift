@@ -27,12 +27,99 @@ enum MailServiceError: Error, LocalizedError {
 
 protocol MailService {
     var provider: MailProvider { get }
+    var account: Account? { get }
     var isAuthenticated: Bool { get }
     func authenticate() async throws -> Account
     func fetchInbox() async throws -> [EmailThread]
     func fetchMessage(id: String) async throws -> Email
     func send(message: DraftMessage) async throws
     func archive(id: String) async throws
+}
+
+// MARK: - Persistence Helpers (Keychain + UserDefaults)
+
+final class KeychainHelper {
+    static let shared = KeychainHelper()
+
+    func save(_ string: String, account: String) {
+        guard let data = string.data(using: .utf8) else { return }
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrAccount: account,
+            kSecValueData: data,
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    func read(account: String) -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrAccount: account,
+            kSecReturnData: kCFBooleanTrue!,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data,
+            let str = String(data: data, encoding: .utf8)
+        else { return nil }
+        return str
+    }
+
+    func delete(account: String) {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword, kSecAttrAccount: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+private func accessTokenKey(for provider: MailProvider) -> String {
+    "powerusermail.\(provider.rawValue).accessToken"
+}
+private func refreshTokenKey(for provider: MailProvider) -> String {
+    "powerusermail.\(provider.rawValue).refreshToken"
+}
+private func emailKey(for provider: MailProvider) -> String {
+    "powerusermail.\(provider.rawValue).email"
+}
+private func expiryKey(for provider: MailProvider) -> String {
+    "powerusermail.\(provider.rawValue).expiry"
+}
+
+private func storeTokensForProvider(
+    _ provider: MailProvider, accessToken: String, refreshToken: String?, expiresIn: Int?
+) {
+    KeychainHelper.shared.save(accessToken, account: accessTokenKey(for: provider))
+    if let refresh = refreshToken {
+        KeychainHelper.shared.save(refresh, account: refreshTokenKey(for: provider))
+    }
+    if let expires = expiresIn {
+        let expiry = Date().addingTimeInterval(TimeInterval(expires))
+        UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: expiryKey(for: provider))
+    }
+}
+
+private func loadStoredAccount(for provider: MailProvider) -> Account? {
+    guard let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider)) else {
+        return nil
+    }
+    let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider))
+    let email = KeychainHelper.shared.read(account: emailKey(for: provider)) ?? ""
+    return Account(
+        provider: provider, emailAddress: email, displayName: "", accessToken: access,
+        refreshToken: refresh, lastSyncDate: nil, isAuthenticated: true)
+}
+
+private func saveEmailForProvider(_ provider: MailProvider, email: String) {
+    KeychainHelper.shared.save(email, account: emailKey(for: provider))
+}
+
+private func accessTokenExpiry(for provider: MailProvider) -> Date? {
+    guard let ts = UserDefaults.standard.value(forKey: expiryKey(for: provider)) as? TimeInterval
+    else { return nil }
+    return Date(timeIntervalSince1970: ts)
 }
 
 // MARK: - OAuth Configuration & Helpers
@@ -69,6 +156,109 @@ extension Data {
     }
 }
 
+// MARK: - API Response Models
+
+// Gmail Models
+struct GmailProfile: Codable {
+    let emailAddress: String
+    let messagesTotal: Int
+    let threadsTotal: Int
+    let historyId: String
+}
+
+struct GmailThreadListResponse: Codable {
+    let threads: [GmailThreadSummary]?
+    let nextPageToken: String?
+    let resultSizeEstimate: Int?
+}
+
+struct GmailThreadSummary: Codable {
+    let id: String
+    let snippet: String?
+    let historyId: String?
+}
+
+struct GmailThreadDetail: Codable {
+    let id: String
+    let messages: [GmailMessage]
+}
+
+struct GmailMessage: Codable {
+    let id: String
+    let threadId: String
+    let snippet: String?
+    let payload: GmailMessagePayload?
+    let internalDate: String?
+}
+
+struct GmailMessagePayload: Codable {
+    let headers: [GmailHeader]?
+    let body: GmailBody?
+    let parts: [GmailMessagePart]?
+}
+
+struct GmailHeader: Codable {
+    let name: String
+    let value: String
+}
+
+struct GmailBody: Codable {
+    let data: String?
+    let size: Int?
+}
+
+struct GmailMessagePart: Codable {
+    let partId: String?
+    let mimeType: String?
+    let filename: String?
+    let headers: [GmailHeader]?
+    let body: GmailBody?
+    let parts: [GmailMessagePart]?
+}
+
+// Outlook Models
+struct OutlookProfile: Codable {
+    let displayName: String?
+    let mail: String?
+    let userPrincipalName: String?
+}
+
+struct OutlookMessageListResponse: Codable {
+    let value: [OutlookMessage]
+    let nextLink: String?
+
+    enum CodingKeys: String, CodingKey {
+        case value
+        case nextLink = "@odata.nextLink"
+    }
+}
+
+struct OutlookMessage: Codable {
+    let id: String
+    let conversationId: String?
+    let subject: String?
+    let bodyPreview: String?
+    let body: OutlookBody?
+    let from: OutlookRecipient?
+    let toRecipients: [OutlookRecipient]?
+    let receivedDateTime: String?
+    let isRead: Bool?
+}
+
+struct OutlookBody: Codable {
+    let contentType: String?
+    let content: String?
+}
+
+struct OutlookRecipient: Codable {
+    let emailAddress: OutlookEmailAddress?
+}
+
+struct OutlookEmailAddress: Codable {
+    let name: String?
+    let address: String?
+}
+
 // MARK: - Services
 
 final class GmailService: NSObject, MailService {
@@ -76,34 +266,135 @@ final class GmailService: NSObject, MailService {
     var provider: MailProvider { .gmail }
     var isAuthenticated: Bool { account?.isAuthenticated == true }
 
+    override init() {
+        super.init()
+        if let stored = loadStoredAccount(for: .gmail) {
+            account = stored
+        }
+    }
+
     // TODO: Replace with your actual Google Client ID and Redirect URI
     private let config = OAuthConfiguration(
         authEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
         tokenEndpoint: "https://oauth2.googleapis.com/token",
-        clientId: "YOUR_GOOGLE_CLIENT_ID",
-        redirectUri: "com.googleusercontent.apps.YOUR_GOOGLE_CLIENT_ID:/oauth2redirect",
+        clientId: "684667393164-oev1qt9hrou3fd7jgssivfdh1ccth2l6.apps.googleusercontent.com",
+        redirectUri:
+            "com.googleusercontent.apps.684667393164-oev1qt9hrou3fd7jgssivfdh1ccth2l6:/oauth2redirect",
         scopes: ["https://mail.google.com/"]
     )
 
+
     func authenticate() async throws -> Account {
         let tokens = try await performOAuthFlow(config: config, provider: provider)
-        // In a real app, you would fetch the user profile here to get the email/name
+
+        // Fetch User Profile
+        let profileURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/profile")!
+        var request = URLRequest(url: profileURL)
+        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let profile: GmailProfile = try await URLSession.shared.data(for: request)
+
         let newAccount = Account(
-            provider: provider, emailAddress: "user@gmail.com", displayName: "Gmail User",
+            provider: provider, emailAddress: profile.emailAddress, displayName: "Gmail User",
             accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
             isAuthenticated: true)
         account = newAccount
+
+        // Persist email + tokens
+        saveEmailForProvider(provider, email: profile.emailAddress)
+        storeTokensForProvider(
+            provider, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn)
+
         return newAccount
     }
 
     func fetchInbox() async throws -> [EmailThread] {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
-        return MockMailData.sampleThreads
+        guard account != nil else { throw MailServiceError.authenticationRequired }
+
+        // Ensure valid access token (refresh if needed)
+        let token = try await ensureValidAccessToken(for: provider, config: config)
+
+        // 1. List Threads
+        let listURL = URL(
+            string: "https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=10")!
+        var listRequest = URLRequest(url: listURL)
+        listRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let listResponse: GmailThreadListResponse = try await URLSession.shared.data(
+            for: listRequest)
+
+        guard let threads = listResponse.threads else { return [] }
+
+        // 2. Fetch Details for each thread
+        var emailThreads: [EmailThread] = []
+
+        for threadSummary in threads {
+            let detailURL = URL(
+                string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)"
+            )!
+            var detailRequest = URLRequest(url: detailURL)
+            detailRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let threadDetail: GmailThreadDetail = try await URLSession.shared.data(
+                for: detailRequest)
+
+            let messages = threadDetail.messages.map { mapGmailMessage($0) }
+            let subject = messages.first?.subject ?? "No Subject"
+            let participants = Array(Set(messages.map { $0.from } + messages.flatMap { $0.to }))
+
+            emailThreads.append(
+                EmailThread(
+                    id: threadDetail.id, subject: subject, messages: messages,
+                    participants: participants))
+        }
+
+        return emailThreads
+    }
+
+    private func mapGmailMessage(_ msg: GmailMessage) -> Email {
+        let headers = msg.payload?.headers ?? []
+        let subject =
+            headers.first(where: { $0.name.lowercased() == "subject" })?.value ?? "(No Subject)"
+        let from = headers.first(where: { $0.name.lowercased() == "from" })?.value ?? "Unknown"
+        let to =
+            headers.first(where: { $0.name.lowercased() == "to" })?.value.components(
+                separatedBy: ",") ?? []
+
+        var body = msg.snippet ?? ""
+        if let parts = msg.payload?.parts {
+            for part in parts {
+                if part.mimeType == "text/plain", let data = part.body?.data {
+                    body = data.base64UrlDecoded() ?? body
+                }
+            }
+        } else if let data = msg.payload?.body?.data {
+            body = data.base64UrlDecoded() ?? body
+        }
+
+        let dateStr = msg.internalDate ?? "0"
+        let date = Date(timeIntervalSince1970: (Double(dateStr) ?? 0) / 1000)
+
+        return Email(
+            id: msg.id,
+            threadId: msg.threadId,
+            subject: subject,
+            from: from,
+            to: to,
+            preview: msg.snippet ?? "",
+            body: body,
+            receivedAt: date
+        )
     }
 
     func fetchMessage(id: String) async throws -> Email {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
-        return MockMailData.sampleEmail(id: id)
+        guard let account = account else { throw MailServiceError.authenticationRequired }
+        let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/\(id)")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let msg: GmailMessage = try await URLSession.shared.data(for: request)
+        return mapGmailMessage(msg)
     }
 
     func send(message: DraftMessage) async throws {
@@ -120,6 +411,13 @@ final class OutlookService: NSObject, MailService {
     var provider: MailProvider { .outlook }
     var isAuthenticated: Bool { account?.isAuthenticated == true }
 
+    override init() {
+        super.init()
+        if let stored = loadStoredAccount(for: .outlook) {
+            account = stored
+        }
+    }
+
     // TODO: Replace with your actual Microsoft Client ID and Redirect URI
     private let config = OAuthConfiguration(
         authEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
@@ -134,23 +432,89 @@ final class OutlookService: NSObject, MailService {
 
     func authenticate() async throws -> Account {
         let tokens = try await performOAuthFlow(config: config, provider: provider)
-        // In a real app, you would fetch the user profile here
+
+        // Fetch User Profile
+        let profileURL = URL(string: "https://graph.microsoft.com/v1.0/me")!
+        var request = URLRequest(url: profileURL)
+        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let profile: OutlookProfile = try await URLSession.shared.data(for: request)
+
+        let email = profile.mail ?? profile.userPrincipalName ?? "user@outlook.com"
+        let name = profile.displayName ?? "Outlook User"
+
         let newAccount = Account(
-            provider: provider, emailAddress: "user@outlook.com", displayName: "Outlook User",
+            provider: provider, emailAddress: email, displayName: name,
             accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
             isAuthenticated: true)
         account = newAccount
+
+        // Persist email + tokens
+        saveEmailForProvider(provider, email: email)
+        storeTokensForProvider(
+            provider, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn)
+
         return newAccount
     }
 
     func fetchInbox() async throws -> [EmailThread] {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
-        return MockMailData.sampleThreads
+        guard account != nil else { throw MailServiceError.authenticationRequired }
+
+        // Ensure valid access token (refresh if needed)
+        let token = try await ensureValidAccessToken(for: provider, config: config)
+
+        let url = URL(
+            string:
+                "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20&$select=id,conversationId,subject,bodyPreview,body,from,toRecipients,receivedDateTime,isRead"
+        )!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let response: OutlookMessageListResponse = try await URLSession.shared.data(for: request)
+
+        // Group by conversationId
+        let grouped = Dictionary(
+            grouping: response.value, by: { $0.conversationId ?? UUID().uuidString })
+
+        return grouped.map { (conversationId, messages) in
+            let mappedMessages = messages.map { mapOutlookMessage($0) }
+            let subject = mappedMessages.first?.subject ?? "No Subject"
+            let participants = Array(
+                Set(mappedMessages.map { $0.from } + mappedMessages.flatMap { $0.to }))
+
+            return EmailThread(
+                id: conversationId, subject: subject, messages: mappedMessages,
+                participants: participants)
+        }
+    }
+
+    private func mapOutlookMessage(_ msg: OutlookMessage) -> Email {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: msg.receivedDateTime ?? "") ?? Date()
+
+        return Email(
+            id: msg.id,
+            threadId: msg.conversationId ?? "",
+            subject: msg.subject ?? "(No Subject)",
+            from: msg.from?.emailAddress?.address ?? "Unknown",
+            to: (msg.toRecipients ?? []).compactMap { $0.emailAddress?.address },
+            preview: msg.bodyPreview ?? "",
+            body: msg.body?.content ?? "",
+            receivedAt: date,
+            isRead: msg.isRead ?? false
+        )
     }
 
     func fetchMessage(id: String) async throws -> Email {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
-        return MockMailData.sampleEmail(id: id)
+        guard let account = account else { throw MailServiceError.authenticationRequired }
+        let url = URL(string: "https://graph.microsoft.com/v1.0/me/messages/\(id)")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let msg: OutlookMessage = try await URLSession.shared.data(for: request)
+        return mapOutlookMessage(msg)
     }
 
     func send(message: DraftMessage) async throws {
@@ -159,6 +523,20 @@ final class OutlookService: NSObject, MailService {
 
     func archive(id: String) async throws {
         guard isAuthenticated else { throw MailServiceError.authenticationRequired }
+    }
+}
+
+extension String {
+    func base64UrlDecoded() -> String? {
+        var base64 =
+            self
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 {
+            base64.append("=")
+        }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }
 
@@ -193,6 +571,12 @@ extension MailService {
             URLQueryItem(name: "code_challenge", value: pkce.codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
+
+        // Request offline access for providers that support refresh tokens (Google)
+        if provider == .gmail || config.authEndpoint.contains("accounts.google.com") {
+            components.queryItems?.append(URLQueryItem(name: "access_type", value: "offline"))
+            components.queryItems?.append(URLQueryItem(name: "prompt", value: "consent"))
+        }
 
         guard let authURL = components.url else {
             throw MailServiceError.custom("Invalid auth URL")
@@ -231,7 +615,69 @@ extension MailService {
         }
 
         // 4. Exchange Code for Tokens
-        return try await exchangeCodeForToken(code: code, pkce: pkce, config: config)
+        let tokens = try await exchangeCodeForToken(code: code, pkce: pkce, config: config)
+
+        // Persist tokens for this provider
+        storeTokensForProvider(
+            provider, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn)
+
+        return tokens
+    }
+
+    // Exchange a refresh token for a new access token
+    func refreshAccessToken(refreshToken: String, config: OAuthConfiguration) async throws
+        -> TokenResponse
+    {
+        var request = URLRequest(url: URL(string: config.tokenEndpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        let bodyParams = [
+            "client_id": config.clientId,
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+        ]
+
+        var comps = URLComponents()
+        comps.queryItems = bodyParams.map { URLQueryItem(name: $0.key, value: $0.value) }
+        request.httpBody = comps.query?.data(using: .utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            if let errorText = String(data: data, encoding: .utf8) {
+                print("Refresh token exchange failed: \(errorText)")
+            }
+            throw MailServiceError.custom("Refresh token exchange failed")
+        }
+
+        let decoder = JSONDecoder()
+        let tokenResp = try decoder.decode(TokenResponse.self, from: data)
+        return tokenResp
+    }
+
+    // Ensure we have a valid access token for this provider (refresh if expired)
+    func ensureValidAccessToken(for provider: MailProvider, config: OAuthConfiguration) async throws
+        -> String
+    {
+        if let expiry = accessTokenExpiry(for: provider), expiry > Date(),
+            let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider))
+        {
+            return access
+        }
+
+        // Try to refresh
+        guard let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider))
+        else {
+            throw MailServiceError.authenticationRequired
+        }
+
+        let newTokens = try await refreshAccessToken(refreshToken: refresh, config: config)
+        storeTokensForProvider(
+            provider, accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken ?? refresh, expiresIn: newTokens.expiresIn)
+
+        return newTokens.accessToken
     }
 
     private func exchangeCodeForToken(code: String, pkce: PKCE, config: OAuthConfiguration)
@@ -297,6 +743,35 @@ enum MockMailData {
             return EmailThread(
                 id: "thread-\(idx)", subject: "Thread \(idx)", messages: [email],
                 participants: [email.from] + email.to)
+        }
+    }
+}
+
+extension URLSession {
+    fileprivate func data<T: Decodable>(for request: URLRequest) async throws -> T {
+        let (data, response) = try await self.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MailServiceError.networkFailure
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let errorText = String(data: data, encoding: .utf8) {
+                print("Request failed: \(httpResponse.statusCode), body: \(errorText)")
+            }
+            if httpResponse.statusCode == 401 {
+                throw MailServiceError.authenticationRequired
+            }
+            throw MailServiceError.custom("Request failed with status \(httpResponse.statusCode)")
+        }
+
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            print("Decoding error: \(error)")
+            if let text = String(data: data, encoding: .utf8) {
+                print("Received data: \(text)")
+            }
+            throw error
         }
     }
 }
