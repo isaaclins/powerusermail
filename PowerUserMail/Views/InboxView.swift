@@ -4,8 +4,8 @@ struct InboxView: View {
     @StateObject private var viewModel: InboxViewModel
     @Binding var selectedConversation: Conversation?
 
-    init(service: MailService, selectedConversation: Binding<Conversation?>) {
-        _viewModel = StateObject(wrappedValue: InboxViewModel(service: service))
+    init(service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>) {
+        _viewModel = StateObject(wrappedValue: InboxViewModel(service: service, myEmail: myEmail))
         _selectedConversation = selectedConversation
     }
 

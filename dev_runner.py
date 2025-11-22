@@ -43,7 +43,9 @@ def run_app():
             current_process.kill()
     
     # Ensure any lingering instances are killed (e.g. from previous runs or crashes)
-    subprocess.run(["killall", "PowerUserMail"], capture_output=True)
+    # We use -9 to force kill and ensure it's really gone
+    subprocess.run(["killall", "-9", "PowerUserMail"], capture_output=True)
+    time.sleep(0.5) # Give the OS a moment to clean up
     
     print("🚀 Running app (logs will appear below)...")
     print("-" * 40)

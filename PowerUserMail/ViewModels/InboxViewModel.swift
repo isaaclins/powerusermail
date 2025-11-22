@@ -9,13 +9,31 @@ final class InboxViewModel: ObservableObject {
     @Published var selectedConversation: Conversation?
 
     private let service: MailService
+    private let myEmail: String
+    private var timer: Timer?
 
-    init(service: MailService) {
+    init(service: MailService, myEmail: String) {
         self.service = service
+        self.myEmail = myEmail
         NotificationCenter.default.addObserver(
             forName: Notification.Name("ReloadInbox"), object: nil, queue: .main
         ) { [weak self] _ in
             self?.reload()
+        }
+
+        // Start polling every 15 seconds
+        startPolling()
+    }
+
+    deinit {
+        timer?.invalidate()
+    }
+
+    private func startPolling() {
+        timer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.loadInbox()
+            }
         }
     }
 
@@ -43,13 +61,30 @@ final class InboxViewModel: ObservableObject {
 
         var finalConversations: [Conversation] = []
 
-        // 2. Group Standard by Sender (Person)
-        let groupedByPerson = Dictionary(grouping: standardMessages, by: { $0.from })
-        for (sender, msgs) in groupedByPerson {
+        // 2. Group Standard by Counterpart (Person)
+        // If I am the sender, group by the recipient. If I am the receiver, group by the sender.
+        let groupedByPerson = Dictionary(grouping: standardMessages) { message -> String in
+            if message.from.localizedCaseInsensitiveContains(self.myEmail) {
+                // I sent this. Who did I send it to?
+                // Try to find a recipient that isn't me
+                if let other = message.to.first(where: {
+                    !$0.localizedCaseInsensitiveContains(self.myEmail)
+                }) {
+                    return other
+                }
+                // If I sent it to myself, or no other recipients found
+                return message.to.first ?? message.from
+            } else {
+                // Someone sent it to me. Group by sender.
+                return message.from
+            }
+        }
+
+        for (person, msgs) in groupedByPerson {
             finalConversations.append(
                 Conversation(
-                    id: sender,
-                    person: sender,
+                    id: person,  // Use the person's email as the ID for the conversation
+                    person: person,
                     messages: msgs.sorted(by: { $0.receivedAt < $1.receivedAt })
                 ))
         }
