@@ -102,16 +102,22 @@ struct ContentView: View {
     private func configureCommands() {
         commandActions = [
             CommandAction(
-                title: "New Email", keywords: ["compose", "create"],
+                title: "New Email", keywords: ["compose", "create", "write"],
                 iconSystemName: "square.and.pencil"
             ) {
                 openCompose()
             },
             CommandAction(
-                title: "Show Accounts", keywords: ["settings", "accounts"],
+                title: "Show Accounts", keywords: ["settings", "accounts", "preferences"],
                 iconSystemName: "person.crop.circle"
             ) {
                 accountViewModel.selectedAccount = nil
+            },
+            CommandAction(
+                title: "Quit PowerUserMail", keywords: ["quit", "exit", "close"],
+                iconSystemName: "power"
+            ) {
+                NSApplication.shared.terminate(nil)
             },
         ]
     }
