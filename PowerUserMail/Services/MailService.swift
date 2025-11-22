@@ -431,7 +431,43 @@ final class GmailService: NSObject, MailService {
     }
 
     func send(message: DraftMessage) async throws {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
+        guard let account = account else { throw MailServiceError.authenticationRequired }
+
+        // Ensure valid access token
+        let token = try await ensureValidAccessToken(for: provider, config: config)
+
+        let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Construct MIME message
+        var mime = ""
+        if !message.to.isEmpty { mime += "To: \(message.to.joined(separator: ", "))\r\n" }
+        if !message.cc.isEmpty { mime += "Cc: \(message.cc.joined(separator: ", "))\r\n" }
+        if !message.bcc.isEmpty { mime += "Bcc: \(message.bcc.joined(separator: ", "))\r\n" }
+
+        mime += "Subject: \(message.subject)\r\n"
+        mime += "Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n"
+        mime += message.body
+
+        guard let mimeData = mime.data(using: .utf8) else {
+            throw MailServiceError.custom("Failed to encode message")
+        }
+
+        let raw = mimeData.base64URLEncodedString()
+        let body = ["raw": raw]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode)
+        else {
+            throw MailServiceError.custom("Failed to send email")
+        }
     }
 
     func archive(id: String) async throws {
@@ -560,7 +596,42 @@ final class OutlookService: NSObject, MailService {
     }
 
     func send(message: DraftMessage) async throws {
-        guard isAuthenticated else { throw MailServiceError.authenticationRequired }
+        guard let account = account else { throw MailServiceError.authenticationRequired }
+
+        // Ensure valid access token
+        let token = try await ensureValidAccessToken(for: provider, config: config)
+
+        let url = URL(string: "https://graph.microsoft.com/v1.0/me/sendMail")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let messageDict: [String: Any] = [
+            "subject": message.subject,
+            "body": [
+                "contentType": "Text",
+                "content": message.body,
+            ],
+            "toRecipients": message.to.map { ["emailAddress": ["address": $0]] },
+            "ccRecipients": message.cc.map { ["emailAddress": ["address": $0]] },
+            "bccRecipients": message.bcc.map { ["emailAddress": ["address": $0]] },
+        ]
+
+        let body: [String: Any] = [
+            "message": messageDict,
+            "saveToSentItems": true,
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode)
+        else {
+            throw MailServiceError.custom("Failed to send email")
+        }
     }
 
     func archive(id: String) async throws {

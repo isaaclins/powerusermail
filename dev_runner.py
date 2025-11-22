@@ -42,6 +42,9 @@ def run_app():
             print("Force killing...")
             current_process.kill()
     
+    # Ensure any lingering instances are killed (e.g. from previous runs or crashes)
+    subprocess.run(["killall", "PowerUserMail"], capture_output=True)
+    
     print("🚀 Running app (logs will appear below)...")
     print("-" * 40)
     # Run directly to capture stdout/stderr in the current terminal
