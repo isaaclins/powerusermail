@@ -125,6 +125,14 @@ struct ConversationRow: View {
         conversation.hasUnread
     }
     
+    private var isPinned: Bool {
+        ConversationStateStore.shared.isPinned(conversationId: conversation.id)
+    }
+    
+    private var isMuted: Bool {
+        ConversationStateStore.shared.isMuted(conversationId: conversation.id)
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
             // Unread indicator dot
@@ -160,6 +168,18 @@ struct ConversationRow: View {
                         .foregroundStyle(hasUnread ? Color.primary : Color.primary.opacity(0.9))
                         .lineLimit(1)
                     
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                    }
+                    
+                    if isMuted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     Spacer()
                     
                     if let last = conversation.latestMessage {
@@ -188,6 +208,70 @@ struct ConversationRow: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.1)) {
                 isHovered = hovering
+            }
+        }
+        .contextMenu {
+            // Section 1: Status actions
+            Button {
+                ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
+            } label: {
+                Label(
+                    ConversationStateStore.shared.isPinned(conversationId: conversation.id) ? "Unpin" : "Pin to Top",
+                    systemImage: ConversationStateStore.shared.isPinned(conversationId: conversation.id) ? "pin.slash" : "pin"
+                )
+            }
+            
+            Button {
+                // TODO: Implement mark as read/unread via API
+            } label: {
+                Label(
+                    hasUnread ? "Mark as Read" : "Mark as Unread",
+                    systemImage: hasUnread ? "envelope.open" : "envelope.badge"
+                )
+            }
+            
+            Button {
+                ConversationStateStore.shared.toggleMuted(conversationId: conversation.id)
+            } label: {
+                Label(
+                    ConversationStateStore.shared.isMuted(conversationId: conversation.id) ? "Unmute" : "Mute",
+                    systemImage: ConversationStateStore.shared.isMuted(conversationId: conversation.id) ? "bell" : "bell.slash"
+                )
+            }
+            
+            Divider()
+            
+            // Section 2: Thread organization
+            if isTopic {
+                Button {
+                    PromotedThreadStore.shared.demote(threadId: conversation.id)
+                } label: {
+                    Label("Merge back to Person", systemImage: "arrow.down.backward.square")
+                }
+            } else {
+                Button {
+                    // Promote all messages in this conversation
+                    for message in conversation.messages {
+                        PromotedThreadStore.shared.promote(threadId: message.threadId)
+                    }
+                } label: {
+                    Label("Promote to Topic", systemImage: "arrow.up.forward.square")
+                }
+            }
+            
+            Divider()
+            
+            // Section 3: Destructive actions
+            Button {
+                // TODO: Implement archive via API
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            
+            Button(role: .destructive) {
+                // TODO: Implement delete via API
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }

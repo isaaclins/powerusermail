@@ -125,8 +125,17 @@ final class InboxViewModel: ObservableObject {
                 ))
         }
 
-        // Sort conversations by latest message time
+        // Sort conversations: pinned first, then by latest message time
         self.conversations = finalConversations.sorted { c1, c2 in
+            let pinned1 = ConversationStateStore.shared.isPinned(conversationId: c1.id)
+            let pinned2 = ConversationStateStore.shared.isPinned(conversationId: c2.id)
+            
+            // Pinned conversations come first
+            if pinned1 != pinned2 {
+                return pinned1
+            }
+            
+            // Then sort by latest message time
             guard let m1 = c1.latestMessage, let m2 = c2.latestMessage else { return false }
             return m1.receivedAt > m2.receivedAt
         }
