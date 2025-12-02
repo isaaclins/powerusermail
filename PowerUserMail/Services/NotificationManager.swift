@@ -167,5 +167,19 @@ final class NotificationManager: ObservableObject {
     func clearBadge() {
         updateBadgeCount(0)
     }
+    
+    // MARK: - Account Switching
+    
+    /// Reset state when switching accounts - CRITICAL for data isolation
+    func resetForNewAccount() {
+        print("🔄 NotificationManager: Resetting for new account")
+        knownMessageIDs.removeAll()
+        hasInitialized = false
+        clearBadge()
+        
+        // Clear any pending notifications from the previous account
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
 }
 

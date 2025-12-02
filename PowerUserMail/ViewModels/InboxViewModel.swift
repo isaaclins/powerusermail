@@ -24,23 +24,54 @@ final class InboxViewModel: ObservableObject {
     }
     
     func configure(service: MailService, myEmail: String) {
-        // Skip if already configured with same values
-        if isConfigured && self.myEmail == myEmail { return }
+        // CRITICAL: Always check if this is a different account
+        let isDifferentAccount = self.myEmail != myEmail
+        
+        // Skip only if exact same account is already configured
+        if isConfigured && !isDifferentAccount { return }
+        
+        // Stop existing polling
+        timer?.invalidate()
+        timer = nil
+        
+        // CRITICAL: Clear ALL data when switching accounts
+        if isDifferentAccount {
+            print("🔄 Switching account from \(self.myEmail) to \(myEmail) - clearing all data")
+            loadedThreads = []
+            conversations = []
+            selectedConversation = nil
+            errorMessage = nil
+            loadingProgress = ""
+            isLoading = false
+            
+            // Reset notification manager for new account
+            NotificationManager.shared.resetForNewAccount()
+        }
         
         self.service = service
         self.myEmail = myEmail
         self.isConfigured = true
         
-        // Reset and start fresh
-        timer?.invalidate()
-        loadedThreads = []
-        conversations = []
-        
-        // Start polling
+        // Start polling for new account
         startPolling()
         
         // Initial load
         Task { await loadInbox() }
+    }
+    
+    /// Force clear all data (call when signing out or switching accounts)
+    func clearAllData() {
+        timer?.invalidate()
+        timer = nil
+        loadedThreads = []
+        conversations = []
+        selectedConversation = nil
+        errorMessage = nil
+        loadingProgress = ""
+        isLoading = false
+        isConfigured = false
+        myEmail = ""
+        service = nil
     }
 
     deinit {

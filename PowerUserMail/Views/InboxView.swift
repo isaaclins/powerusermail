@@ -153,6 +153,10 @@ struct InboxView: View {
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
+        .onAppear {
+            // Ensure viewModel is configured for this account
+            viewModel.configure(service: service, myEmail: myEmail)
+        }
     }
     
     // MARK: - Filter Bar

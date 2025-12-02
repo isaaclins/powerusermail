@@ -77,6 +77,7 @@ struct AccountSwitcherSheet: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .focusable(false)
                                 
                                 // Remove account button
                                 Button {
@@ -87,6 +88,7 @@ struct AccountSwitcherSheet: View {
                                         .font(.system(size: 16))
                                 }
                                 .buttonStyle(.plain)
+                                .focusable(false)
                                 .help("Remove account")
                             }
                             .padding(.horizontal, 16)

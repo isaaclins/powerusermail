@@ -111,6 +111,16 @@ struct ContentView: View {
             CommandLoader.loadAll()
             configureCommands()
         }
+        // CRITICAL: Handle account switching - clear all data for isolation
+        .onChange(of: accountViewModel.selectedAccount?.id) { oldValue, newValue in
+            if oldValue != newValue {
+                print("🔄 Account changed from \(oldValue?.uuidString ?? "none") to \(newValue?.uuidString ?? "none")")
+                // Clear selected conversation when switching accounts
+                selectedConversation = nil
+                // Clear inbox data - will be reloaded by InboxView
+                inboxViewModel.clearAllData()
+            }
+        }
     }
 
     private var onboardingView: some View {
