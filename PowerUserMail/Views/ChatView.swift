@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct ChatView: View {
     let conversation: Conversation
@@ -122,6 +123,8 @@ struct ChatView: View {
 struct ChatBubble: View {
     let email: Email
     let myEmail: String
+    
+    @State private var contentHeight: CGFloat = 100
 
     var isMe: Bool {
         email.from.localizedCaseInsensitiveContains(myEmail)
@@ -146,10 +149,6 @@ struct ChatBubble: View {
         for line in lines {
             let trimmed = line.trimmingCharacters(in: CharacterSet.whitespaces)
 
-            // Check if this line starts a quote block
-            // This is a heuristic and might be too aggressive or miss some cases
-            // Ideally we'd use a regex for "On ... wrote:" but simple prefix checks help a lot
-
             // Check for "On ... wrote:" pattern
             if trimmed.hasPrefix("On ") && trimmed.hasSuffix("wrote:") {
                 break
@@ -161,12 +160,8 @@ struct ChatBubble: View {
 
             // Check for other markers
             if markers.contains(where: { trimmed.hasPrefix($0) }) {
-                // If it's just ">", it's a quote line. If it's a separator, it's the end.
                 if trimmed.hasPrefix(">") {
-                    continue  // Skip this line, but maybe not stop completely?
-                    // Usually in chat view we want to hide all quoted text.
-                    // If we break here, we hide everything after the first quote.
-                    break
+                    continue
                 }
                 break
             }
@@ -176,22 +171,152 @@ struct ChatBubble: View {
 
         return resultLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    
+    /// Strip HTML and extract plain text for display
+    var displayText: String {
+        var text = cleanedBody
+        
+        // Remove entire <style>...</style> blocks (including content)
+        text = text.replacingOccurrences(
+            of: "<style[^>]*>[\\s\\S]*?</style>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        // Remove entire <script>...</script> blocks
+        text = text.replacingOccurrences(
+            of: "<script[^>]*>[\\s\\S]*?</script>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        // Remove entire <head>...</head> section
+        text = text.replacingOccurrences(
+            of: "<head[^>]*>[\\s\\S]*?</head>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        // Remove HTML comments
+        text = text.replacingOccurrences(
+            of: "<!--[\\s\\S]*?-->",
+            with: "",
+            options: .regularExpression
+        )
+        
+        // Replace <br> and <br/> with newlines
+        text = text.replacingOccurrences(
+            of: "<br\\s*/?>",
+            with: "\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        // Replace </p>, </div>, </tr> with newlines for paragraph breaks
+        text = text.replacingOccurrences(
+            of: "</(?:p|div|tr|li|h[1-6])>",
+            with: "\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        // Remove remaining HTML tags
+        text = text.replacingOccurrences(
+            of: "<[^>]+>",
+            with: "",
+            options: .regularExpression
+        )
+        
+        // Decode common HTML entities
+        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
+        text = text.replacingOccurrences(of: "&amp;", with: "&")
+        text = text.replacingOccurrences(of: "&lt;", with: "<")
+        text = text.replacingOccurrences(of: "&gt;", with: ">")
+        text = text.replacingOccurrences(of: "&quot;", with: "\"")
+        text = text.replacingOccurrences(of: "&#39;", with: "'")
+        text = text.replacingOccurrences(of: "&apos;", with: "'")
+        text = text.replacingOccurrences(of: "&#160;", with: " ")
+        text = text.replacingOccurrences(of: "&ndash;", with: "–")
+        text = text.replacingOccurrences(of: "&mdash;", with: "—")
+        text = text.replacingOccurrences(of: "&bull;", with: "•")
+        text = text.replacingOccurrences(of: "&copy;", with: "©")
+        text = text.replacingOccurrences(of: "&reg;", with: "®")
+        
+        // Decode numeric HTML entities (&#123; format)
+        let numericEntityPattern = "&#(\\d+);"
+        if let regex = try? NSRegularExpression(pattern: numericEntityPattern) {
+            let range = NSRange(text.startIndex..., in: text)
+            let matches = regex.matches(in: text, range: range)
+            
+            for match in matches.reversed() {
+                if let codeRange = Range(match.range(at: 1), in: text),
+                   let code = Int(text[codeRange]),
+                   let scalar = Unicode.Scalar(code) {
+                    let char = String(Character(scalar))
+                    if let fullRange = Range(match.range, in: text) {
+                        text.replaceSubrange(fullRange, with: char)
+                    }
+                }
+            }
+        }
+        
+        // Clean up multiple newlines
+        text = text.replacingOccurrences(
+            of: "\\n{3,}",
+            with: "\n\n",
+            options: .regularExpression
+        )
+        
+        // Clean up multiple spaces
+        text = text.replacingOccurrences(
+            of: "[ \\t]+",
+            with: " ",
+            options: .regularExpression
+        )
+        
+        // Clean up spaces around newlines
+        text = text.replacingOccurrences(
+            of: " *\\n *",
+            with: "\n",
+            options: .regularExpression
+        )
+        
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    /// Check if content is HTML
+    var isHTMLContent: Bool {
+        let body = cleanedBody.lowercased()
+        return body.contains("<html") || body.contains("<body") || body.contains("<div") || 
+               body.contains("<table") || body.contains("<p>") || body.contains("<br")
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            if isMe { Spacer() }
+            if isMe { Spacer(minLength: 50) }
 
             VStack(alignment: .leading, spacing: 4) {
                 if !isMe && !email.subject.isEmpty {
-                    Text(email.from)  // Show sender name/email for others
+                    Text(email.from)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
-                Text(cleanedBody)  // Use cleaned body
-                    .font(.body)
-                    .foregroundStyle(isMe ? .white : .primary)
-                    .lineLimit(nil)
+                if isHTMLContent {
+                    // Use WebView for HTML content with scroll passthrough
+                    ScrollTransparentWebView(
+                        htmlContent: cleanedBody,
+                        isMe: isMe,
+                        contentHeight: $contentHeight
+                    )
+                    .frame(height: contentHeight)
+                } else {
+                    // Use plain Text for simple content
+                    Text(displayText)
+                        .font(.body)
+                        .foregroundStyle(isMe ? .white : .primary)
+                        .lineLimit(nil)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Text(email.receivedAt, style: .time)
                     .font(.caption2)
@@ -201,12 +326,9 @@ struct ChatBubble: View {
             .padding(12)
             .background(isMe ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
             .cornerRadius(16)
-            // Add a little tail effect or just rounded corners
-            .clipShape(
-                RoundedRectangle(cornerRadius: 16)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-            .frame(maxWidth: 450, alignment: isMe ? .trailing : .leading)
+            .frame(maxWidth: isHTMLContent ? 550 : 500, alignment: isMe ? .trailing : .leading)
             .contextMenu {
                 if PromotedThreadStore.shared.isPromoted(threadId: email.threadId) {
                     Button {
@@ -223,7 +345,141 @@ struct ChatBubble: View {
                 }
             }
 
-            if !isMe { Spacer() }
+            if !isMe { Spacer(minLength: 50) }
         }
+        .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
     }
 }
+
+// MARK: - Scroll-Transparent WebView
+// This WebView passes scroll events to the parent ScrollView
+
+class ScrollPassthroughWebView: WKWebView {
+    override func scrollWheel(with event: NSEvent) {
+        // Pass scroll events to next responder (parent ScrollView)
+        self.nextResponder?.scrollWheel(with: event)
+    }
+}
+
+struct ScrollTransparentWebView: NSViewRepresentable {
+    let htmlContent: String
+    let isMe: Bool
+    @Binding var contentHeight: CGFloat
+    
+    func makeNSView(context: Context) -> ScrollPassthroughWebView {
+        let config = WKWebViewConfiguration()
+        let webView = ScrollPassthroughWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        webView.setValue(false, forKey: "drawsBackground")
+        
+        // Disable all scrolling on the WebView itself
+        webView.enclosingScrollView?.hasVerticalScroller = false
+        webView.enclosingScrollView?.hasHorizontalScroller = false
+        
+        return webView
+    }
+    
+    func updateNSView(_ nsView: ScrollPassthroughWebView, context: Context) {
+        let styledHTML = wrapWithStyling(htmlContent)
+        nsView.loadHTMLString(styledHTML, baseURL: nil)
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: ScrollTransparentWebView
+        
+        init(_ parent: ScrollTransparentWebView) {
+            self.parent = parent
+        }
+        
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Calculate content height after load
+            webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
+                if let height = result as? CGFloat {
+                    DispatchQueue.main.async {
+                        self?.parent.contentHeight = min(max(height, 50), 600) // Cap at 600px
+                    }
+                }
+            }
+        }
+    }
+    
+    private func wrapWithStyling(_ content: String) -> String {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        
+        let textColor: String
+        let linkColor: String
+        let bgColor: String
+        
+        if isMe {
+            textColor = "#ffffff"
+            linkColor = "#b3d9ff"
+            bgColor = "transparent"
+        } else {
+            textColor = isDark ? "#e4e4e4" : "#1a1a1a"
+            linkColor = isDark ? "#6cb6ff" : "#0066cc"
+            bgColor = "transparent"
+        }
+        
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                * { box-sizing: border-box; }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    overflow: hidden !important;
+                    background: \(bgColor) !important;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    color: \(textColor) !important;
+                    word-wrap: break-word;
+                    overflow-wrap: break-word;
+                }
+                /* Override any background colors in email */
+                body *, div, table, td, th, p, span {
+                    background-color: transparent !important;
+                    color: \(textColor) !important;
+                }
+                a { color: \(linkColor) !important; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                img { max-width: 100%; height: auto; border-radius: 6px; }
+                table { border-collapse: collapse; max-width: 100%; }
+                pre, code {
+                    font-family: 'SF Mono', Menlo, monospace;
+                    font-size: 12px;
+                    background: rgba(128,128,128,0.2) !important;
+                    border-radius: 4px;
+                    padding: 2px 4px;
+                }
+                pre { padding: 8px; overflow-x: auto; }
+                blockquote {
+                    border-left: 3px solid \(linkColor);
+                    margin: 0.5em 0;
+                    padding-left: 10px;
+                    opacity: 0.8;
+                }
+                h1, h2, h3, h4, h5, h6 {
+                    margin: 0.5em 0 0.3em;
+                    line-height: 1.3;
+                }
+                p { margin: 0.4em 0; }
+                ul, ol { padding-left: 1.2em; margin: 0.4em 0; }
+                hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 0.5em 0; }
+            </style>
+        </head>
+        <body>\(content)</body>
+        </html>
+        """
+    }
+}
+

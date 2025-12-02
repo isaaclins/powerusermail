@@ -42,11 +42,12 @@ struct Account: Identifiable, Codable, Equatable {
     var refreshToken: String?
     var lastSyncDate: Date?
     var isAuthenticated: Bool
+    var profilePictureURL: String?
 
     init(
         id: UUID = UUID(), provider: MailProvider, emailAddress: String, displayName: String,
         accessToken: String, refreshToken: String? = nil, lastSyncDate: Date? = nil,
-        isAuthenticated: Bool = false
+        isAuthenticated: Bool = false, profilePictureURL: String? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -56,6 +57,36 @@ struct Account: Identifiable, Codable, Equatable {
         self.refreshToken = refreshToken
         self.lastSyncDate = lastSyncDate
         self.isAuthenticated = isAuthenticated
+        self.profilePictureURL = profilePictureURL
+    }
+    
+    /// Returns the profile picture URL or a Gravatar fallback
+    var effectiveProfilePictureURL: URL? {
+        if let urlString = profilePictureURL, let url = URL(string: urlString) {
+            return url
+        }
+        return gravatarURL
+    }
+    
+    /// Gravatar URL based on email hash
+    var gravatarURL: URL? {
+        let email = emailAddress.lowercased().trimmingCharacters(in: .whitespaces)
+        guard let data = email.data(using: .utf8) else { return nil }
+        
+        // MD5 hash for Gravatar
+        let hash = data.md5Hash
+        return URL(string: "https://www.gravatar.com/avatar/\(hash)?s=200&d=identicon")
+    }
+}
+
+// MARK: - MD5 Hash Extension for Gravatar
+import Foundation
+import CryptoKit
+
+extension Data {
+    var md5Hash: String {
+        let digest = Insecure.MD5.hash(data: self)
+        return digest.map { String(format: "%02hhx", $0) }.joined()
     }
 }
 
@@ -160,5 +191,41 @@ struct Conversation: Identifiable, Hashable {
 
     var latestMessage: Email? {
         messages.max(by: { $0.receivedAt < $1.receivedAt })
+    }
+    
+    var hasUnread: Bool {
+        messages.contains { !$0.isRead }
+    }
+    
+    var unreadCount: Int {
+        messages.filter { !$0.isRead }.count
+    }
+}
+
+// MARK: - Relative Time Formatter
+extension Date {
+    func relativeTimeString() -> String {
+        let now = Date()
+        let interval = now.timeIntervalSince(self)
+        
+        if interval < 60 {
+            return "Just now"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return "\(minutes) min ago"
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            return hours == 1 ? "1 hour ago" : "\(hours) hours ago"
+        } else if interval < 172800 {
+            return "Yesterday"
+        } else if interval < 604800 {
+            let days = Int(interval / 86400)
+            return "\(days) days ago"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .none
+            return formatter.string(from: self)
+        }
     }
 }

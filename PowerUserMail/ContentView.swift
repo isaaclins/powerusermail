@@ -73,6 +73,30 @@ struct ContentView: View {
             )
             .navigationTitle("Chats")
             .toolbar {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button {
+                        accountViewModel.selectedAccount = nil
+                    } label: {
+                        HStack(spacing: 8) {
+                            ProfilePictureView(account: accountViewModel.selectedAccount, size: 28)
+                            
+                            if let account = accountViewModel.selectedAccount {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(account.displayName.isEmpty ? "Account" : account.displayName)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(account.emailAddress)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("Switch Account")
+                }
+                
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: openCompose) {
                         Label("New Email", systemImage: "square.and.pencil")

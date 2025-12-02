@@ -31,6 +31,7 @@ protocol MailService {
     var isAuthenticated: Bool { get }
     func authenticate() async throws -> Account
     func fetchInbox() async throws -> [EmailThread]
+    func fetchInboxStream() -> AsyncThrowingStream<EmailThread, Error>
     func fetchMessage(id: String) async throws -> Email
     func send(message: DraftMessage) async throws
     func archive(id: String) async throws
@@ -166,6 +167,12 @@ struct GmailProfile: Codable {
     let historyId: String
 }
 
+struct GoogleUserInfo: Codable {
+    let email: String?
+    let name: String?
+    let picture: String?
+}
+
 struct GmailThreadListResponse: Codable {
     let threads: [GmailThreadSummary]?
     let nextPageToken: String?
@@ -292,11 +299,30 @@ final class GmailService: NSObject, MailService {
         request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
 
         let profile: GmailProfile = try await URLSession.shared.data(for: request)
+        
+        // Try to fetch profile picture from Google userinfo endpoint
+        var profilePictureURL: String? = nil
+        var displayName = "Gmail User"
+        
+        do {
+            let userInfoURL = URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!
+            var userInfoRequest = URLRequest(url: userInfoURL)
+            userInfoRequest.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+            
+            let userInfo: GoogleUserInfo = try await URLSession.shared.data(for: userInfoRequest)
+            profilePictureURL = userInfo.picture
+            if let name = userInfo.name, !name.isEmpty {
+                displayName = name
+            }
+        } catch {
+            // Profile picture fetch failed, continue without it
+            print("Could not fetch user profile picture: \(error)")
+        }
 
         let newAccount = Account(
-            provider: provider, emailAddress: profile.emailAddress, displayName: "Gmail User",
+            provider: provider, emailAddress: profile.emailAddress, displayName: displayName,
             accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
-            isAuthenticated: true)
+            isAuthenticated: true, profilePictureURL: profilePictureURL)
         account = newAccount
 
         // Persist email + tokens
@@ -383,6 +409,91 @@ final class GmailService: NSObject, MailService {
         } while nextPageToken != nil && pageCount < maxPages
 
         return allThreads
+    }
+    
+    func fetchInboxStream() -> AsyncThrowingStream<EmailThread, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard account != nil else {
+                        continuation.finish(throwing: MailServiceError.authenticationRequired)
+                        return
+                    }
+                    
+                    let token = try await ensureValidAccessToken(for: provider, config: config)
+                    
+                    var nextPageToken: String? = nil
+                    let maxPages = 5
+                    var pageCount = 0
+                    
+                    repeat {
+                        var components = URLComponents(
+                            string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
+                        var queryItems = [URLQueryItem(name: "maxResults", value: "20")]
+                        if let pageToken = nextPageToken {
+                            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+                        }
+                        components.queryItems = queryItems
+                        
+                        var listRequest = URLRequest(url: components.url!)
+                        listRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                        
+                        let listResponse: GmailThreadListResponse = try await URLSession.shared.data(
+                            for: listRequest)
+                        
+                        nextPageToken = listResponse.nextPageToken
+                        
+                        if let threads = listResponse.threads {
+                            // Fetch thread details concurrently but yield as each completes
+                            await withTaskGroup(of: EmailThread?.self) { group in
+                                for threadSummary in threads {
+                                    group.addTask {
+                                        do {
+                                            let detailURL = URL(
+                                                string:
+                                                    "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)"
+                                            )!
+                                            var detailRequest = URLRequest(url: detailURL)
+                                            detailRequest.setValue(
+                                                "Bearer \(token)", forHTTPHeaderField: "Authorization")
+                                            let threadDetail: GmailThreadDetail = try await URLSession.shared
+                                                .data(for: detailRequest)
+                                            
+                                            let messages = threadDetail.messages.map {
+                                                self.mapGmailMessage($0)
+                                            }
+                                            let subject = messages.first?.subject ?? "No Subject"
+                                            let participants = Array(
+                                                Set(messages.map { $0.from } + messages.flatMap { $0.to }))
+                                            
+                                            return EmailThread(
+                                                id: threadDetail.id, subject: subject, messages: messages,
+                                                participants: participants)
+                                        } catch {
+                                            print("Failed to fetch thread details: \(error)")
+                                            return nil
+                                        }
+                                    }
+                                }
+                                
+                                // Yield each thread as it completes
+                                for await thread in group {
+                                    if let thread = thread {
+                                        continuation.yield(thread)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        pageCount += 1
+                    } while nextPageToken != nil && pageCount < maxPages
+                    
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
 
     private func mapGmailMessage(_ msg: GmailMessage) -> Email {
@@ -511,11 +622,31 @@ final class OutlookService: NSObject, MailService {
 
         let email = profile.mail ?? profile.userPrincipalName ?? "user@outlook.com"
         let name = profile.displayName ?? "Outlook User"
+        
+        // Fetch profile picture URL from Microsoft Graph
+        // Note: MS Graph returns the actual image data, so we'll store it as a data URL or use a placeholder
+        var profilePictureURL: String? = nil
+        
+        do {
+            let photoURL = URL(string: "https://graph.microsoft.com/v1.0/me/photo/$value")!
+            var photoRequest = URLRequest(url: photoURL)
+            photoRequest.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+            
+            let (data, response) = try await URLSession.shared.data(for: photoRequest)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                // Convert to data URL for easy display
+                let base64 = data.base64EncodedString()
+                profilePictureURL = "data:image/jpeg;base64,\(base64)"
+            }
+        } catch {
+            // Profile picture fetch failed, continue without it
+            print("Could not fetch Outlook profile picture: \(error)")
+        }
 
         let newAccount = Account(
             provider: provider, emailAddress: email, displayName: name,
             accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
-            isAuthenticated: true)
+            isAuthenticated: true, profilePictureURL: profilePictureURL)
         account = newAccount
 
         // Persist email + tokens
@@ -564,6 +695,71 @@ final class OutlookService: NSObject, MailService {
             return EmailThread(
                 id: conversationId, subject: subject, messages: mappedMessages,
                 participants: participants)
+        }
+    }
+    
+    func fetchInboxStream() -> AsyncThrowingStream<EmailThread, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard account != nil else {
+                        continuation.finish(throwing: MailServiceError.authenticationRequired)
+                        return
+                    }
+                    
+                    let token = try await ensureValidAccessToken(for: provider, config: config)
+                    
+                    var conversationGroups: [String: [OutlookMessage]] = [:]
+                    var yieldedConversations: Set<String> = []
+                    
+                    var nextLink: String? =
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20&$select=id,conversationId,subject,bodyPreview,body,from,toRecipients,receivedDateTime,isRead&$orderby=receivedDateTime desc"
+                    
+                    let maxPages = 5
+                    var pageCount = 0
+                    
+                    while let link = nextLink, pageCount < maxPages {
+                        var request = URLRequest(url: URL(string: link)!)
+                        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                        
+                        let response: OutlookMessageListResponse = try await URLSession.shared.data(
+                            for: request)
+                        
+                        // Process messages and yield conversations as they become complete
+                        for message in response.value {
+                            let convId = message.conversationId ?? UUID().uuidString
+                            
+                            if conversationGroups[convId] == nil {
+                                conversationGroups[convId] = []
+                            }
+                            conversationGroups[convId]?.append(message)
+                            
+                            // Yield new conversations immediately
+                            if !yieldedConversations.contains(convId) {
+                                let messages = conversationGroups[convId]!
+                                let mappedMessages = messages.map { self.mapOutlookMessage($0) }
+                                let subject = mappedMessages.first?.subject ?? "No Subject"
+                                let participants = Array(
+                                    Set(mappedMessages.map { $0.from } + mappedMessages.flatMap { $0.to }))
+                                
+                                let thread = EmailThread(
+                                    id: convId, subject: subject, messages: mappedMessages,
+                                    participants: participants)
+                                
+                                continuation.yield(thread)
+                                yieldedConversations.insert(convId)
+                            }
+                        }
+                        
+                        nextLink = response.nextLink
+                        pageCount += 1
+                    }
+                    
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
         }
     }
 
