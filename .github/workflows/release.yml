@@ -12,12 +12,12 @@ jobs:
   release:
     name: Build & Release
     runs-on: macos-15
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for changelog
+          fetch-depth: 0 # Full history for changelog
 
       - name: Select Xcode version
         run: |
@@ -81,7 +81,7 @@ jobs:
           else
             COMMITS=$(git log --pretty=format:"- %s" --no-merges -20)
           fi
-          
+
           # Write to file for multi-line support
           echo "## What's Changed" > changelog.md
           echo "" >> changelog.md
@@ -102,4 +102,3 @@ jobs:
             PowerUserMail-${{ steps.version.outputs.version }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
