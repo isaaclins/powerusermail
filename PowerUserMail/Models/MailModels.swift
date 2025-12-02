@@ -193,12 +193,21 @@ struct Conversation: Identifiable, Hashable {
         messages.max(by: { $0.receivedAt < $1.receivedAt })
     }
     
+    /// Returns true if conversation has unread messages and hasn't been locally marked as read
     var hasUnread: Bool {
-        messages.contains { !$0.isRead }
+        // If locally marked as read, consider it read
+        if ConversationStateStore.shared.isRead(conversationId: id) {
+            return false
+        }
+        // Otherwise, check the server-side read status
+        return messages.contains { !$0.isRead }
     }
     
     var unreadCount: Int {
-        messages.filter { !$0.isRead }.count
+        if ConversationStateStore.shared.isRead(conversationId: id) {
+            return 0
+        }
+        return messages.filter { !$0.isRead }.count
     }
 }
 

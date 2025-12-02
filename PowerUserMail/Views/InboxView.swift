@@ -70,6 +70,8 @@ struct InboxView: View {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             viewModel.select(conversation: conversation)
                             selectedConversation = conversation
+                            // Mark as read when opened
+                            ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
                         }
                     }
                 }
@@ -137,12 +139,44 @@ struct InboxView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .pinned }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilterAll"))) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) { _ in
+            let allIds = viewModel.conversations.map { $0.id }
+            ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
+        }
     }
     
     // MARK: - Filter Bar
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                // "All" button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        activeFilter = .all
+                    }
+                } label: {
+                    Text("All")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(activeFilter == .all ? Color.accentColor : Color.clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .strokeBorder(
+                                    activeFilter == .all ? Color.clear : Color.secondary.opacity(0.3),
+                                    lineWidth: 1
+                                )
+                        )
+                        .foregroundStyle(activeFilter == .all ? .white : .primary)
+                }
+                .buttonStyle(.plain)
+                
                 ForEach(InboxFilter.allCases.filter { $0 != .all }, id: \.self) { filter in
                     FilterPill(
                         filter: filter,
@@ -353,7 +387,7 @@ struct ConversationRow: View {
             }
             
             Button {
-                // TODO: Implement mark as read/unread via API
+                ConversationStateStore.shared.toggleRead(conversationId: conversation.id)
             } label: {
                 Label(
                     hasUnread ? "Mark as Read" : "Mark as Unread",

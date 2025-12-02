@@ -31,6 +31,12 @@ struct PowerUserMailApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command])
                 
+                Button("Toggle Sidebar") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("ToggleSidebar"), object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+                
                 Divider()
                 
                 Button("Show Unread") {

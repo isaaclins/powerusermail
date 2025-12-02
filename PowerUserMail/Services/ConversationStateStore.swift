@@ -1,15 +1,17 @@
 import Foundation
 import Combine
 
-/// Manages local state for conversations (pinned, muted)
+/// Manages local state for conversations (pinned, muted, read)
 final class ConversationStateStore: ObservableObject {
     static let shared = ConversationStateStore()
     
     @Published private(set) var pinnedConversationIDs: Set<String> = []
     @Published private(set) var mutedConversationIDs: Set<String> = []
+    @Published private(set) var readConversationIDs: Set<String> = []
     
     private let pinnedKey = "pinnedConversations"
     private let mutedKey = "mutedConversations"
+    private let readKey = "readConversations"
     
     private init() {
         loadFromDefaults()
@@ -65,6 +67,38 @@ final class ConversationStateStore: ObservableObject {
         saveToDefaults()
     }
     
+    // MARK: - Read State
+    
+    func isRead(conversationId: String) -> Bool {
+        readConversationIDs.contains(conversationId)
+    }
+    
+    func markAsRead(conversationId: String) {
+        readConversationIDs.insert(conversationId)
+        saveToDefaults()
+    }
+    
+    func markAllAsRead(conversationIds: [String]) {
+        for id in conversationIds {
+            readConversationIDs.insert(id)
+        }
+        saveToDefaults()
+    }
+    
+    func markAsUnread(conversationId: String) {
+        readConversationIDs.remove(conversationId)
+        saveToDefaults()
+    }
+    
+    func toggleRead(conversationId: String) {
+        if readConversationIDs.contains(conversationId) {
+            readConversationIDs.remove(conversationId)
+        } else {
+            readConversationIDs.insert(conversationId)
+        }
+        saveToDefaults()
+    }
+    
     // MARK: - Persistence
     
     private func loadFromDefaults() {
@@ -74,11 +108,15 @@ final class ConversationStateStore: ObservableObject {
         if let muted = UserDefaults.standard.array(forKey: mutedKey) as? [String] {
             mutedConversationIDs = Set(muted)
         }
+        if let read = UserDefaults.standard.array(forKey: readKey) as? [String] {
+            readConversationIDs = Set(read)
+        }
     }
     
     private func saveToDefaults() {
         UserDefaults.standard.set(Array(pinnedConversationIDs), forKey: pinnedKey)
         UserDefaults.standard.set(Array(mutedConversationIDs), forKey: mutedKey)
+        UserDefaults.standard.set(Array(readConversationIDs), forKey: readKey)
     }
 }
 

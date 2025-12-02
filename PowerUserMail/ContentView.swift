@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var isShowingCommandPalette = false
     @State private var commandSearch = ""
     @State private var commandActions: [CommandAction] = []
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var isTogglingsidebar = false
 
     var body: some View {
         Group {
@@ -68,7 +70,19 @@ struct ContentView: View {
             _ in
             openCompose()
         }
-        .onAppear(perform: configureCommands)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ToggleSidebar"))) {
+            _ in
+            toggleSidebar()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowAccountSwitcher"))) {
+            _ in
+            isShowingAccountSwitcher = true
+        }
+        .onAppear {
+            // Load all command plugins
+            CommandLoader.loadAll()
+            configureCommands()
+        }
     }
 
     private var onboardingView: some View {
@@ -77,10 +91,11 @@ struct ContentView: View {
 
     private func mainSplitView(service: MailService) -> some View {
         let myEmail = accountViewModel.selectedAccount?.emailAddress ?? ""
-        return NavigationSplitView {
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
             InboxView(
                 service: service, myEmail: myEmail, selectedConversation: $selectedConversation
             )
+            .navigationSplitViewColumnWidth(min: 280, ideal: 320)
             .navigationTitle("Chats")
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {
@@ -132,6 +147,25 @@ struct ContentView: View {
     private func openCompose() {
         isShowingCompose = true
     }
+    
+    private func toggleSidebar() {
+        // Debounce to prevent rapid toggling breaking the layout
+        guard !isTogglingsidebar else { return }
+        isTogglingsidebar = true
+        
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if columnVisibility == .detailOnly {
+                columnVisibility = .all
+            } else {
+                columnVisibility = .detailOnly
+            }
+        }
+        
+        // Re-enable after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            isTogglingsidebar = false
+        }
+    }
 
     private func openReply() {
         guard let conversation = selectedConversation else { return }
@@ -168,54 +202,28 @@ struct ContentView: View {
     }
 
     private func toggleCommandPalette() {
-        // Refresh commands before showing
-        commandActions = generateCommands()
+        // Use commands from the registry
+        commandActions = CommandRegistry.shared.getCommands()
+        
+        // Add context-specific commands
+        if selectedConversation != nil {
+            commandActions.insert(
+                CommandAction(
+                    title: "Reply to Chat", keywords: ["reply", "respond", "answer"],
+                    iconSystemName: "arrowshape.turn.up.left"
+                ) {
+                    openReply()
+                }, at: 0
+            )
+        }
+        
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             isShowingCommandPalette.toggle()
         }
     }
 
-    private func generateCommands() -> [CommandAction] {
-        var actions = [
-            CommandAction(
-                title: "New Email", keywords: ["compose", "create", "write"],
-                iconSystemName: "square.and.pencil"
-            ) {
-                openCompose()
-            },
-            CommandAction(
-                title: "Switch Account", keywords: ["settings", "accounts", "preferences", "switch"],
-                iconSystemName: "person.crop.circle"
-            ) {
-                isShowingAccountSwitcher = true
-            },
-            CommandAction(
-                title: "Quit PowerUserMail", keywords: ["quit", "exit", "close"],
-                iconSystemName: "power"
-            ) {
-                NSApplication.shared.terminate(nil)
-            },
-        ]
-
-        if selectedConversation != nil {
-            actions.insert(
-                CommandAction(
-                    title: "Reply to Chat", keywords: ["reply", "respond", "answer"],
-                    iconSystemName: "arrowshape.turn.up.left"
-                ) {
-                    // For the command palette reply, we'll just open the compose window for now
-                    // as focusing the inline field requires passing focus state down the hierarchy
-                    openReply()
-                }, at: 0
-            )
-        }
-
-        return actions
-    }
-
-    // We remove configureCommands and use generateCommands instead
     private func configureCommands() {
-        commandActions = generateCommands()
+        commandActions = CommandRegistry.shared.getCommands()
     }
 }
 
