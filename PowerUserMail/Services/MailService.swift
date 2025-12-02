@@ -77,49 +77,83 @@ final class KeychainHelper {
     }
 }
 
-private func accessTokenKey(for provider: MailProvider) -> String {
+// MARK: - Account-specific keychain keys (supports multiple accounts per provider)
+
+private func accessTokenKey(for provider: MailProvider, email: String) -> String {
+    "powerusermail.\(provider.rawValue).\(email.lowercased()).accessToken"
+}
+private func refreshTokenKey(for provider: MailProvider, email: String) -> String {
+    "powerusermail.\(provider.rawValue).\(email.lowercased()).refreshToken"
+}
+private func expiryKey(for provider: MailProvider, email: String) -> String {
+    "powerusermail.\(provider.rawValue).\(email.lowercased()).expiry"
+}
+
+// Legacy keys (for backward compatibility - will be migrated)
+private func legacyAccessTokenKey(for provider: MailProvider) -> String {
     "powerusermail.\(provider.rawValue).accessToken"
 }
-private func refreshTokenKey(for provider: MailProvider) -> String {
+private func legacyRefreshTokenKey(for provider: MailProvider) -> String {
     "powerusermail.\(provider.rawValue).refreshToken"
 }
-private func emailKey(for provider: MailProvider) -> String {
+private func legacyEmailKey(for provider: MailProvider) -> String {
     "powerusermail.\(provider.rawValue).email"
 }
-private func expiryKey(for provider: MailProvider) -> String {
+private func legacyExpiryKey(for provider: MailProvider) -> String {
     "powerusermail.\(provider.rawValue).expiry"
 }
 
-private func storeTokensForProvider(
-    _ provider: MailProvider, accessToken: String, refreshToken: String?, expiresIn: Int?
+private func storeTokensForAccount(
+    provider: MailProvider, email: String, accessToken: String, refreshToken: String?, expiresIn: Int?
 ) {
-    KeychainHelper.shared.save(accessToken, account: accessTokenKey(for: provider))
+    print("💾 Storing tokens for \(email)")
+    KeychainHelper.shared.save(accessToken, account: accessTokenKey(for: provider, email: email))
     if let refresh = refreshToken {
-        KeychainHelper.shared.save(refresh, account: refreshTokenKey(for: provider))
+        KeychainHelper.shared.save(refresh, account: refreshTokenKey(for: provider, email: email))
     }
     if let expires = expiresIn {
         let expiry = Date().addingTimeInterval(TimeInterval(expires))
-        UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: expiryKey(for: provider))
+        UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: expiryKey(for: provider, email: email))
     }
 }
 
+private func accessTokenExpiry(for provider: MailProvider, email: String) -> Date? {
+    let interval = UserDefaults.standard.double(forKey: expiryKey(for: provider, email: email))
+    return interval > 0 ? Date(timeIntervalSince1970: interval) : nil
+}
+
+// Legacy function - kept for backward compatibility during migration
+private func storeTokensForProvider(
+    _ provider: MailProvider, accessToken: String, refreshToken: String?, expiresIn: Int?
+) {
+    KeychainHelper.shared.save(accessToken, account: legacyAccessTokenKey(for: provider))
+    if let refresh = refreshToken {
+        KeychainHelper.shared.save(refresh, account: legacyRefreshTokenKey(for: provider))
+    }
+    if let expires = expiresIn {
+        let expiry = Date().addingTimeInterval(TimeInterval(expires))
+        UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: legacyExpiryKey(for: provider))
+    }
+}
+
+// Legacy functions - kept for backward compatibility but NOT used for multi-account
 private func loadStoredAccount(for provider: MailProvider) -> Account? {
-    guard let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider)) else {
+    guard let access = KeychainHelper.shared.read(account: legacyAccessTokenKey(for: provider)) else {
         return nil
     }
-    let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider))
-    let email = KeychainHelper.shared.read(account: emailKey(for: provider)) ?? ""
+    let refresh = KeychainHelper.shared.read(account: legacyRefreshTokenKey(for: provider))
+    let email = KeychainHelper.shared.read(account: legacyEmailKey(for: provider)) ?? ""
     return Account(
         provider: provider, emailAddress: email, displayName: "", accessToken: access,
         refreshToken: refresh, lastSyncDate: nil, isAuthenticated: true)
 }
 
 private func saveEmailForProvider(_ provider: MailProvider, email: String) {
-    KeychainHelper.shared.save(email, account: emailKey(for: provider))
+    KeychainHelper.shared.save(email, account: legacyEmailKey(for: provider))
 }
 
 private func accessTokenExpiry(for provider: MailProvider) -> Date? {
-    guard let ts = UserDefaults.standard.value(forKey: expiryKey(for: provider)) as? TimeInterval
+    guard let ts = UserDefaults.standard.value(forKey: legacyExpiryKey(for: provider)) as? TimeInterval
     else { return nil }
     return Date(timeIntervalSince1970: ts)
 }
@@ -280,11 +314,13 @@ final class GmailService: NSObject, MailService {
     }
     
     func restoreAccount(_ account: Account) {
+        print("🔄 Gmail: Restoring account \(account.emailAddress)")
         self.account = account
-        // Restore tokens to keychain for this account
+        // Restore tokens to keychain with EMAIL-SPECIFIC keys
         if !account.accessToken.isEmpty {
-            storeTokensForProvider(
-                provider,
+            storeTokensForAccount(
+                provider: provider,
+                email: account.emailAddress,
                 accessToken: account.accessToken,
                 refreshToken: account.refreshToken ?? "",
                 expiresIn: 3600  // Will refresh if needed
@@ -337,20 +373,21 @@ final class GmailService: NSObject, MailService {
             isAuthenticated: true, profilePictureURL: profilePictureURL)
         account = newAccount
 
-        // Persist email + tokens
-        saveEmailForProvider(provider, email: profile.emailAddress)
-        storeTokensForProvider(
-            provider, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+        // Persist tokens with EMAIL-SPECIFIC keys (critical for multi-account support)
+        print("💾 Storing credentials for: \(profile.emailAddress)")
+        storeTokensForAccount(
+            provider: provider, email: profile.emailAddress,
+            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
             expiresIn: tokens.expiresIn)
 
         return newAccount
     }
 
     func fetchInbox() async throws -> [EmailThread] {
-        guard account != nil else { throw MailServiceError.authenticationRequired }
+        guard let account = account else { throw MailServiceError.authenticationRequired }
 
-        // Ensure valid access token (refresh if needed)
-        let token = try await ensureValidAccessToken(for: provider, config: config)
+        // Ensure valid access token for THIS SPECIFIC ACCOUNT
+        let token = try await ensureValidAccessToken(for: provider, email: account.emailAddress, config: config)
 
         var allThreads: [EmailThread] = []
         var nextPageToken: String? = nil
@@ -427,12 +464,13 @@ final class GmailService: NSObject, MailService {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    guard account != nil else {
+                    guard let account = self.account else {
                         continuation.finish(throwing: MailServiceError.authenticationRequired)
                         return
                     }
                     
-                    let token = try await ensureValidAccessToken(for: provider, config: config)
+                    print("📧 Gmail: Fetching inbox for \(account.emailAddress)")
+                    let token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
                     
                     var nextPageToken: String? = nil
                     let maxPages = 5
@@ -595,8 +633,8 @@ final class GmailService: NSObject, MailService {
     func send(message: DraftMessage) async throws {
         guard let account = account else { throw MailServiceError.authenticationRequired }
 
-        // Ensure valid access token
-        let token = try await ensureValidAccessToken(for: provider, config: config)
+        // Ensure valid access token for THIS SPECIFIC ACCOUNT
+        let token = try await ensureValidAccessToken(for: provider, email: account.emailAddress, config: config)
 
         let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")!
         var request = URLRequest(url: url)
@@ -655,11 +693,13 @@ final class OutlookService: NSObject, MailService {
     }
     
     func restoreAccount(_ account: Account) {
+        print("🔄 Outlook: Restoring account \(account.emailAddress)")
         self.account = account
-        // Restore tokens to keychain for this account
+        // Restore tokens to keychain with EMAIL-SPECIFIC keys
         if !account.accessToken.isEmpty {
-            storeTokensForProvider(
-                provider,
+            storeTokensForAccount(
+                provider: provider,
+                email: account.emailAddress,
                 accessToken: account.accessToken,
                 refreshToken: account.refreshToken ?? "",
                 expiresIn: 3600  // Will refresh if needed
@@ -718,20 +758,21 @@ final class OutlookService: NSObject, MailService {
             isAuthenticated: true, profilePictureURL: profilePictureURL)
         account = newAccount
 
-        // Persist email + tokens
-        saveEmailForProvider(provider, email: email)
-        storeTokensForProvider(
-            provider, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+        // Persist tokens with EMAIL-SPECIFIC keys (critical for multi-account support)
+        print("💾 Storing credentials for: \(email)")
+        storeTokensForAccount(
+            provider: provider, email: email,
+            accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
             expiresIn: tokens.expiresIn)
 
         return newAccount
     }
 
     func fetchInbox() async throws -> [EmailThread] {
-        guard account != nil else { throw MailServiceError.authenticationRequired }
+        guard let account = account else { throw MailServiceError.authenticationRequired }
 
-        // Ensure valid access token (refresh if needed)
-        let token = try await ensureValidAccessToken(for: provider, config: config)
+        // Ensure valid access token for THIS SPECIFIC ACCOUNT
+        let token = try await ensureValidAccessToken(for: provider, email: account.emailAddress, config: config)
 
         var allMessages: [OutlookMessage] = []
         var nextLink: String? =
@@ -771,12 +812,13 @@ final class OutlookService: NSObject, MailService {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    guard account != nil else {
+                    guard let account = self.account else {
                         continuation.finish(throwing: MailServiceError.authenticationRequired)
                         return
                     }
                     
-                    let token = try await ensureValidAccessToken(for: provider, config: config)
+                    print("📧 Outlook: Fetching inbox for \(account.emailAddress)")
+                    let token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
                     
                     var conversationGroups: [String: [OutlookMessage]] = [:]
                     var yieldedConversations: Set<String> = []
@@ -863,8 +905,8 @@ final class OutlookService: NSObject, MailService {
     func send(message: DraftMessage) async throws {
         guard let account = account else { throw MailServiceError.authenticationRequired }
 
-        // Ensure valid access token
-        let token = try await ensureValidAccessToken(for: provider, config: config)
+        // Ensure valid access token for THIS SPECIFIC ACCOUNT
+        let token = try await ensureValidAccessToken(for: provider, email: account.emailAddress, config: config)
 
         let url = URL(string: "https://graph.microsoft.com/v1.0/me/sendMail")!
         var request = URLRequest(url: url)
@@ -1051,17 +1093,47 @@ extension MailService {
     }
 
     // Ensure we have a valid access token for this provider (refresh if expired)
+    // Account-specific token validation
+    func ensureValidAccessToken(for provider: MailProvider, email: String, config: OAuthConfiguration) async throws
+        -> String
+    {
+        print("🔑 Checking token for \(email)")
+        
+        // Check account-specific token first
+        if let expiry = accessTokenExpiry(for: provider, email: email), expiry > Date(),
+            let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider, email: email))
+        {
+            print("✓ Valid token found for \(email)")
+            return access
+        }
+
+        // Try to refresh using account-specific refresh token
+        guard let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider, email: email))
+        else {
+            print("❌ No refresh token for \(email)")
+            throw MailServiceError.authenticationRequired
+        }
+
+        print("🔄 Refreshing token for \(email)")
+        let newTokens = try await refreshAccessToken(refreshToken: refresh, config: config)
+        storeTokensForAccount(
+            provider: provider, email: email, accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken ?? refresh, expiresIn: newTokens.expiresIn)
+
+        return newTokens.accessToken
+    }
+    
+    // Legacy function - for backward compatibility
     func ensureValidAccessToken(for provider: MailProvider, config: OAuthConfiguration) async throws
         -> String
     {
         if let expiry = accessTokenExpiry(for: provider), expiry > Date(),
-            let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider))
+            let access = KeychainHelper.shared.read(account: legacyAccessTokenKey(for: provider))
         {
             return access
         }
 
-        // Try to refresh
-        guard let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider))
+        guard let refresh = KeychainHelper.shared.read(account: legacyRefreshTokenKey(for: provider))
         else {
             throw MailServiceError.authenticationRequired
         }
