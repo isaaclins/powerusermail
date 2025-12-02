@@ -113,12 +113,22 @@ struct ContentView: View {
         }
         // CRITICAL: Handle account switching - clear all data for isolation
         .onChange(of: accountViewModel.selectedAccount?.id) { oldValue, newValue in
-            if oldValue != newValue {
+            if oldValue != newValue && oldValue != nil {
                 print("🔄 Account changed from \(oldValue?.uuidString ?? "none") to \(newValue?.uuidString ?? "none")")
                 // Clear selected conversation when switching accounts
                 selectedConversation = nil
-                // Clear inbox data - will be reloaded by InboxView
+                // CRITICAL: Clear ALL inbox data IMMEDIATELY before new account loads
                 inboxViewModel.clearAllData()
+                // Reset notification manager
+                NotificationManager.shared.resetForNewAccount()
+            }
+        }
+        .onChange(of: accountViewModel.selectedAccount?.emailAddress) { oldEmail, newEmail in
+            if let old = oldEmail, let new = newEmail, old != new {
+                print("🔄 Email changed from \(old) to \(new) - clearing data")
+                selectedConversation = nil
+                inboxViewModel.clearAllData()
+                NotificationManager.shared.resetForNewAccount()
             }
         }
     }

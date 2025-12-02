@@ -24,30 +24,35 @@ final class InboxViewModel: ObservableObject {
     }
     
     func configure(service: MailService, myEmail: String) {
-        // CRITICAL: Always check if this is a different account
-        let isDifferentAccount = self.myEmail != myEmail
+        // CRITICAL: Check if this is a different account or same account
+        let isSameAccount = isConfigured && self.myEmail.lowercased() == myEmail.lowercased()
         
-        // Skip only if exact same account is already configured
-        if isConfigured && !isDifferentAccount { return }
+        // Skip ONLY if exact same account is already fully configured and loaded
+        if isSameAccount && !conversations.isEmpty {
+            print("✓ Same account already configured: \(myEmail)")
+            return
+        }
         
-        // Stop existing polling
+        print("🔄 Configuring account: \(myEmail) (was: \(self.myEmail.isEmpty ? "none" : self.myEmail))")
+        
+        // Stop existing polling FIRST
         timer?.invalidate()
         timer = nil
         
-        // CRITICAL: Clear ALL data when switching accounts
-        if isDifferentAccount {
-            print("🔄 Switching account from \(self.myEmail) to \(myEmail) - clearing all data")
-            loadedThreads = []
-            conversations = []
-            selectedConversation = nil
-            errorMessage = nil
-            loadingProgress = ""
-            isLoading = false
-            
-            // Reset notification manager for new account
-            NotificationManager.shared.resetForNewAccount()
-        }
+        // CRITICAL: ALWAYS clear ALL data when configuring ANY account
+        // This ensures complete isolation
+        print("🧹 Clearing all cached data for account isolation")
+        loadedThreads.removeAll()
+        conversations.removeAll()
+        selectedConversation = nil
+        errorMessage = nil
+        loadingProgress = ""
+        isLoading = false
         
+        // Reset notification manager
+        NotificationManager.shared.resetForNewAccount()
+        
+        // Set new account info
         self.service = service
         self.myEmail = myEmail
         self.isConfigured = true

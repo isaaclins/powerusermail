@@ -39,9 +39,7 @@ struct InboxView: View {
         self.service = service
         self.myEmail = myEmail
         _selectedConversation = selectedConversation
-        
-        // Configure the viewModel with service and email
-        viewModel.configure(service: service, myEmail: myEmail)
+        // Don't configure here - do it in onAppear to ensure proper lifecycle
     }
     
     private var filteredConversations: [Conversation] {
