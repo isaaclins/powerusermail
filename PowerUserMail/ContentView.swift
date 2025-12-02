@@ -12,6 +12,7 @@ struct ContentView: View {
     @StateObject private var accountViewModel = AccountViewModel()
     @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
+    @State private var isShowingAccountSwitcher = false
     @State private var isShowingCommandPalette = false
     @State private var commandSearch = ""
     @State private var commandActions: [CommandAction] = []
@@ -23,8 +24,14 @@ struct ContentView: View {
             {
                 mainSplitView(service: service)
                     .id(account.id)
-            } else {
+            } else if accountViewModel.accounts.isEmpty {
+                // Only show onboarding if NO accounts exist
                 onboardingView
+            } else {
+                // Accounts exist but none selected - auto-select first
+                Color.clear.onAppear {
+                    accountViewModel.selectedAccount = accountViewModel.accounts.first
+                }
             }
         }
         .overlay(alignment: .center) {
@@ -48,6 +55,9 @@ struct ContentView: View {
             {
                 ComposeView(viewModel: ComposeViewModel(service: service))
             }
+        }
+        .sheet(isPresented: $isShowingAccountSwitcher) {
+            AccountSwitcherSheet(accountViewModel: accountViewModel, isPresented: $isShowingAccountSwitcher)
         }
         .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("ToggleCommandPalette"))
@@ -75,7 +85,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {
                     Button {
-                        accountViewModel.selectedAccount = nil
+                        isShowingAccountSwitcher = true
                     } label: {
                         HStack(spacing: 8) {
                             ProfilePictureView(account: accountViewModel.selectedAccount, size: 28)
@@ -174,10 +184,10 @@ struct ContentView: View {
                 openCompose()
             },
             CommandAction(
-                title: "Show Accounts", keywords: ["settings", "accounts", "preferences"],
+                title: "Switch Account", keywords: ["settings", "accounts", "preferences", "switch"],
                 iconSystemName: "person.crop.circle"
             ) {
-                accountViewModel.selectedAccount = nil
+                isShowingAccountSwitcher = true
             },
             CommandAction(
                 title: "Quit PowerUserMail", keywords: ["quit", "exit", "close"],

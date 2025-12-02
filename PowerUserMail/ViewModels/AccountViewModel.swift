@@ -22,6 +22,11 @@ final class AccountViewModel: ObservableObject {
 
         // Load stored accounts
         self.accounts = self.services.values.compactMap { $0.account }
+        
+        // Auto-select the first account if available
+        if let firstAccount = self.accounts.first {
+            self.selectedAccount = firstAccount
+        }
     }
 
     func authenticate(provider: MailProvider) async {

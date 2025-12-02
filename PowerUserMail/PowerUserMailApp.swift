@@ -30,6 +30,26 @@ struct PowerUserMailApp: App {
                         name: Notification.Name("OpenCompose"), object: nil)
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+                
+                Divider()
+                
+                Button("Show Unread") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("InboxFilter1"), object: nil)
+                }
+                .keyboardShortcut("1", modifiers: [.command])
+                
+                Button("Show Archived") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("InboxFilter2"), object: nil)
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+                
+                Button("Show Pinned") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("InboxFilter3"), object: nil)
+                }
+                .keyboardShortcut("3", modifiers: [.command])
             }
         }
     }

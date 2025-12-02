@@ -1,18 +1,65 @@
 import SwiftUI
 
+// MARK: - Inbox Filter
+enum InboxFilter: String, CaseIterable {
+    case all = "All"
+    case unread = "Unread"
+    case archived = "Archived"
+    case pinned = "Pinned"
+    
+    var shortcutNumber: Int {
+        switch self {
+        case .all: return 0  // No shortcut for All
+        case .unread: return 1
+        case .archived: return 2
+        case .pinned: return 3
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .all: return "tray"
+        case .unread: return "envelope.badge"
+        case .archived: return "archivebox"
+        case .pinned: return "pin"
+        }
+    }
+}
+
 struct InboxView: View {
     @StateObject private var viewModel: InboxViewModel
     @Binding var selectedConversation: Conversation?
+    @State private var activeFilter: InboxFilter = .all
 
     init(service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>) {
         _viewModel = StateObject(wrappedValue: InboxViewModel(service: service, myEmail: myEmail))
         _selectedConversation = selectedConversation
     }
+    
+    private var filteredConversations: [Conversation] {
+        switch activeFilter {
+        case .all:
+            return viewModel.conversations
+        case .unread:
+            return viewModel.conversations.filter { $0.hasUnread }
+        case .archived:
+            // TODO: Implement archived state tracking
+            return []
+        case .pinned:
+            return viewModel.conversations.filter { 
+                ConversationStateStore.shared.isPinned(conversationId: $0.id)
+            }
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                ForEach(viewModel.conversations) { conversation in
+        VStack(spacing: 0) {
+            // Filter tabs
+            filterBar
+            
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(filteredConversations) { conversation in
                     ConversationRow(
                         conversation: conversation,
                         isSelected: selectedConversation?.id == conversation.id,
@@ -73,8 +120,49 @@ struct InboxView: View {
                 .shadow(radius: 10)
             } else if viewModel.conversations.isEmpty && !viewModel.isLoading {
                 ContentUnavailableView("No Messages", systemImage: "tray")
+            } else if filteredConversations.isEmpty && !viewModel.isLoading && activeFilter != .all {
+                ContentUnavailableView(
+                    "No \(activeFilter.rawValue) Messages",
+                    systemImage: activeFilter.icon
+                )
             }
         }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter2"))) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .pinned }
+        }
+    }
+    
+    // MARK: - Filter Bar
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(InboxFilter.allCases.filter { $0 != .all }, id: \.self) { filter in
+                    FilterPill(
+                        filter: filter,
+                        isActive: activeFilter == filter,
+                        action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if activeFilter == filter {
+                                    activeFilter = .all  // Toggle off
+                                } else {
+                                    activeFilter = filter
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
     }
     
     /// Extract a cleaner display name from email addresses
@@ -106,6 +194,49 @@ struct InboxView: View {
         }
         
         return person
+    }
+}
+
+// MARK: - Filter Pill
+struct FilterPill: View {
+    let filter: InboxFilter
+    let isActive: Bool
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                // Keyboard shortcut indicator
+                Text("⌘\(filter.shortcutNumber)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(isActive ? .white.opacity(0.8) : .secondary)
+                
+                Text(filter.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isActive ? Color.accentColor : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        isActive ? Color.clear : Color.secondary.opacity(isHovered ? 0.5 : 0.3),
+                        lineWidth: 1
+                    )
+            )
+            .foregroundStyle(isActive ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isHovered = hovering
+            }
+        }
     }
 }
 
