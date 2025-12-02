@@ -39,23 +39,29 @@ struct PowerUserMailApp: App {
                 
                 Divider()
                 
-                Button("Show Unread") {
+                Button("Show All") {
                     NotificationCenter.default.post(
                         name: Notification.Name("InboxFilter1"), object: nil)
                 }
                 .keyboardShortcut("1", modifiers: [.command])
                 
-                Button("Show Archived") {
+                Button("Show Unread") {
                     NotificationCenter.default.post(
                         name: Notification.Name("InboxFilter2"), object: nil)
                 }
                 .keyboardShortcut("2", modifiers: [.command])
                 
-                Button("Show Pinned") {
+                Button("Show Archived") {
                     NotificationCenter.default.post(
                         name: Notification.Name("InboxFilter3"), object: nil)
                 }
                 .keyboardShortcut("3", modifiers: [.command])
+                
+                Button("Show Pinned") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("InboxFilter4"), object: nil)
+                }
+                .keyboardShortcut("4", modifiers: [.command])
             }
         }
     }

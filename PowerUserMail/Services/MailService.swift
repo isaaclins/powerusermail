@@ -592,15 +592,22 @@ final class GmailService: NSObject, MailService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Construct MIME message
-        var mime = ""
+        // Construct MIME message with proper RFC 2047 encoding for headers
+        var mime = "MIME-Version: 1.0\r\n"
         if !message.to.isEmpty { mime += "To: \(message.to.joined(separator: ", "))\r\n" }
         if !message.cc.isEmpty { mime += "Cc: \(message.cc.joined(separator: ", "))\r\n" }
         if !message.bcc.isEmpty { mime += "Bcc: \(message.bcc.joined(separator: ", "))\r\n" }
 
-        mime += "Subject: \(message.subject)\r\n"
-        mime += "Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n"
-        mime += message.body
+        // RFC 2047 encode subject for non-ASCII characters
+        let encodedSubject = message.subject.mimeEncodedHeader()
+        mime += "Subject: \(encodedSubject)\r\n"
+        mime += "Content-Type: text/plain; charset=\"UTF-8\"\r\n"
+        mime += "Content-Transfer-Encoding: base64\r\n\r\n"
+        
+        // Base64 encode the body for safe transfer
+        let bodyData = message.body.data(using: .utf8) ?? Data()
+        let encodedBody = bodyData.base64EncodedString(options: .lineLength76Characters)
+        mime += encodedBody
 
         guard let mimeData = mime.data(using: .utf8) else {
             throw MailServiceError.custom("Failed to encode message")
@@ -885,6 +892,22 @@ extension String {
         }
         guard let data = Data(base64Encoded: base64) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+    
+    /// RFC 2047 MIME encoding for email headers (Subject, etc.)
+    /// Encodes non-ASCII characters so they display correctly in email clients
+    func mimeEncodedHeader() -> String {
+        // Check if encoding is needed (contains non-ASCII characters)
+        let needsEncoding = self.unicodeScalars.contains { !$0.isASCII }
+        
+        if !needsEncoding {
+            return self
+        }
+        
+        // Use RFC 2047 Base64 encoding: =?charset?encoding?encoded_text?=
+        guard let data = self.data(using: .utf8) else { return self }
+        let base64 = data.base64EncodedString()
+        return "=?UTF-8?B?\(base64)?="
     }
 }
 

@@ -199,17 +199,6 @@ struct CommandPaletteView: View {
             .background(.ultraThinMaterial)
 
             Divider()
-            
-            // Debug info
-            VStack(alignment: .leading, spacing: 2) {
-                Text("🔍 Query: \"\(searchText)\" | Commands: \(actions.count) | Results: \(filteredResults.count)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.black.opacity(0.3))
 
             // Results List
             ScrollViewReader { proxy in

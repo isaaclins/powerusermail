@@ -9,10 +9,10 @@ enum InboxFilter: String, CaseIterable {
     
     var shortcutNumber: Int {
         switch self {
-        case .all: return 0  // No shortcut for All
-        case .unread: return 1
-        case .archived: return 2
-        case .pinned: return 3
+        case .all: return 1
+        case .unread: return 2
+        case .archived: return 3
+        case .pinned: return 4
         }
     }
     
@@ -131,16 +131,16 @@ struct InboxView: View {
         }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter2"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .pinned }
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilterAll"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter4"))) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .pinned }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) { _ in
             let allIds = viewModel.conversations.map { $0.id }
@@ -151,50 +151,21 @@ struct InboxView: View {
     // MARK: - Filter Bar
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // "All" button
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        activeFilter = .all
-                    }
-                } label: {
-                    Text("All")
-                        .font(.system(size: 13, weight: .medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(activeFilter == .all ? Color.accentColor : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(
-                                    activeFilter == .all ? Color.clear : Color.secondary.opacity(0.3),
-                                    lineWidth: 1
-                                )
-                        )
-                        .foregroundStyle(activeFilter == .all ? .white : .primary)
-                }
-                .buttonStyle(.plain)
-                
-                ForEach(InboxFilter.allCases.filter { $0 != .all }, id: \.self) { filter in
+            HStack(spacing: 6) {
+                ForEach(InboxFilter.allCases, id: \.self) { filter in
                     FilterPill(
                         filter: filter,
                         isActive: activeFilter == filter,
                         action: {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                if activeFilter == filter {
-                                    activeFilter = .all  // Toggle off
-                                } else {
-                                    activeFilter = filter
-                                }
+                                activeFilter = filter
                             }
                         }
                     )
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
         }
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
     }
@@ -241,23 +212,23 @@ struct FilterPill: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                // Keyboard shortcut indicator
+            HStack(spacing: 4) {
+                // Keyboard shortcut indicator (compact)
                 Text("⌘\(filter.shortcutNumber)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(isActive ? .white.opacity(0.8) : .secondary)
                 
                 Text(filter.rawValue)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 14)
                     .fill(isActive ? Color.accentColor : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 14)
                     .strokeBorder(
                         isActive ? Color.clear : Color.secondary.opacity(isHovered ? 0.5 : 0.3),
                         lineWidth: 1
@@ -266,6 +237,7 @@ struct FilterPill: View {
             .foregroundStyle(isActive ? .white : .primary)
         }
         .buttonStyle(.plain)
+        .focusable(false)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.1)) {
                 isHovered = hovering
