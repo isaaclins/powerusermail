@@ -505,16 +505,8 @@ final class GmailService: NSObject, MailService {
             headers.first(where: { $0.name.lowercased() == "to" })?.value.components(
                 separatedBy: ",") ?? []
 
-        var body = msg.snippet ?? ""
-        if let parts = msg.payload?.parts {
-            for part in parts {
-                if part.mimeType == "text/plain", let data = part.body?.data {
-                    body = data.base64UrlDecoded() ?? body
-                }
-            }
-        } else if let data = msg.payload?.body?.data {
-            body = data.base64UrlDecoded() ?? body
-        }
+        // Extract body - prefer HTML over plain text
+        let body = extractBody(from: msg.payload, snippet: msg.snippet ?? "")
 
         let dateStr = msg.internalDate ?? "0"
         let date = Date(timeIntervalSince1970: (Double(dateStr) ?? 0) / 1000)
@@ -529,6 +521,53 @@ final class GmailService: NSObject, MailService {
             body: body,
             receivedAt: date
         )
+    }
+    
+    /// Recursively extract body from Gmail message parts, preferring HTML
+    private func extractBody(from payload: GmailMessagePayload?, snippet: String) -> String {
+        guard let payload = payload else { return snippet }
+        
+        var htmlBody: String?
+        var plainBody: String?
+        
+        // Check if payload has direct body data
+        if let mimeType = payload.parts == nil ? "text/plain" : nil,
+           let data = payload.body?.data,
+           let decoded = data.base64UrlDecoded() {
+            // Single part message
+            if payload.headers?.contains(where: { 
+                $0.name.lowercased() == "content-type" && $0.value.lowercased().contains("text/html") 
+            }) == true {
+                htmlBody = decoded
+            } else {
+                plainBody = decoded
+            }
+        }
+        
+        // Recursively search parts for HTML and plain text
+        func searchParts(_ parts: [GmailMessagePart]?) {
+            guard let parts = parts else { return }
+            
+            for part in parts {
+                let mimeType = part.mimeType?.lowercased() ?? ""
+                
+                if mimeType == "text/html", let data = part.body?.data,
+                   let decoded = data.base64UrlDecoded() {
+                    htmlBody = decoded
+                } else if mimeType == "text/plain", let data = part.body?.data,
+                          let decoded = data.base64UrlDecoded(), plainBody == nil {
+                    plainBody = decoded
+                } else if mimeType.contains("multipart") || part.parts != nil {
+                    // Recurse into nested parts
+                    searchParts(part.parts)
+                }
+            }
+        }
+        
+        searchParts(payload.parts)
+        
+        // Prefer HTML, fall back to plain text, then snippet
+        return htmlBody ?? plainBody ?? snippet
     }
 
     func fetchMessage(id: String) async throws -> Email {

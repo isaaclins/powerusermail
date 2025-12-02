@@ -34,20 +34,12 @@ struct ChatView: View {
 
             // Inline Reply Area
             HStack(alignment: .bottom, spacing: 12) {
-                TextField("Type a message...", text: $replyText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                    )
-                    .lineLimit(1...5)
-                    .focused($isReplyFocused)
-                    .onSubmit {
-                        // Optional: Send on Enter if desired, but for multiline usually Cmd+Enter or Button
-                    }
+                MessageInputField(
+                    text: $replyText,
+                    placeholder: "Type a message...",
+                    onSend: sendReply
+                )
+                .frame(minHeight: 36, maxHeight: 120)
 
                 Button(action: sendReply) {
                     Image(systemName: "paperplane.fill")
@@ -291,7 +283,8 @@ struct ChatBubble: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            if isMe { Spacer(minLength: 50) }
+            // For HTML content, use minimal spacing to allow more width
+            if isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
 
             VStack(alignment: .leading, spacing: 4) {
                 if !isMe && !email.subject.isEmpty {
@@ -323,12 +316,12 @@ struct ChatBubble: View {
                     .foregroundStyle(isMe ? .white.opacity(0.8) : .secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(12)
+            .padding(isHTMLContent ? 8 : 12)
             .background(isMe ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
             .cornerRadius(16)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-            .frame(maxWidth: isHTMLContent ? 550 : 500, alignment: isMe ? .trailing : .leading)
+            .frame(maxWidth: isHTMLContent ? .infinity : 500, alignment: isMe ? .trailing : .leading)
             .contextMenu {
                 if PromotedThreadStore.shared.isPromoted(threadId: email.threadId) {
                     Button {
@@ -345,7 +338,7 @@ struct ChatBubble: View {
                 }
             }
 
-            if !isMe { Spacer(minLength: 50) }
+            if !isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
         }
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
     }
@@ -396,11 +389,12 @@ struct ScrollTransparentWebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Calculate content height after load
+            // Calculate content height after load - no cap, let it expand fully
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
                 if let height = result as? CGFloat {
                     DispatchQueue.main.async {
-                        self?.parent.contentHeight = min(max(height, 50), 600) // Cap at 600px
+                        // Add some padding and ensure minimum height
+                        self?.parent.contentHeight = max(height + 20, 50)
                     }
                 }
             }
@@ -480,6 +474,126 @@ struct ScrollTransparentWebView: NSViewRepresentable {
         <body>\(content)</body>
         </html>
         """
+    }
+}
+
+// MARK: - Message Input Field with Enter to Send, Shift+Enter for New Line
+struct MessageInputField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var onSend: () -> Void
+    
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        let textView = MessageTextView()
+        
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.font = .systemFont(ofSize: 14)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.autoresizingMask = [.width]
+        textView.allowsUndo = true
+        
+        // Store reference for keyboard handling
+        textView.onSend = onSend
+        
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        
+        // Styling
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 18
+        scrollView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        scrollView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.3).cgColor
+        scrollView.layer?.borderWidth = 1
+        
+        // Set initial text
+        textView.string = text
+        
+        return scrollView
+    }
+    
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? MessageTextView else { return }
+        
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.onSend = onSend
+        
+        // Update placeholder visibility
+        textView.needsDisplay = true
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: MessageInputField
+        
+        init(_ parent: MessageInputField) {
+            self.parent = parent
+        }
+        
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+        }
+    }
+}
+
+// Custom NSTextView that handles Enter/Shift+Enter
+class MessageTextView: NSTextView {
+    var onSend: (() -> Void)?
+    var placeholderString: String = "Type a message..."
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        // Draw placeholder if empty - at the exact same position as text would appear
+        if string.isEmpty, let textContainer = textContainer, let layoutManager = layoutManager {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.placeholderTextColor,
+                .font: font ?? .systemFont(ofSize: 14)
+            ]
+            
+            // Get the exact position where text would be drawn
+            let glyphRange = layoutManager.glyphRange(for: textContainer)
+            var textRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            textRect.origin.x += textContainerOrigin.x
+            textRect.origin.y += textContainerOrigin.y
+            
+            let placeholder = NSAttributedString(string: placeholderString, attributes: attrs)
+            placeholder.draw(at: textRect.origin)
+        }
+    }
+    
+    override func keyDown(with event: NSEvent) {
+        // Enter key
+        if event.keyCode == 36 {
+            // Shift+Enter = new line
+            if event.modifierFlags.contains(.shift) {
+                super.keyDown(with: event)
+            } else {
+                // Enter without shift = send
+                if !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    onSend?()
+                }
+            }
+        } else {
+            super.keyDown(with: event)
+        }
     }
 }
 
