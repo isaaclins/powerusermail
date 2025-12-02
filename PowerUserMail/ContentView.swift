@@ -100,6 +100,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentRead"))) { _ in
             markCurrentRead()
         }
+        // Handle notification tap to open conversation
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenConversation"))) { notification in
+            if let from = notification.userInfo?["from"] as? String {
+                openConversationFromNotification(from: from)
+            }
+        }
         .onAppear {
             // Load all command plugins
             CommandLoader.loadAll()
@@ -288,6 +294,19 @@ struct ContentView: View {
         guard let conversation = selectedConversation else { return }
         ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
         print("Marked as read: \(conversation.person)")
+    }
+    
+    private func openConversationFromNotification(from: String) {
+        // Find conversation matching the sender
+        if let conversation = inboxViewModel.conversations.first(where: { conv in
+            conv.person.localizedCaseInsensitiveContains(from) ||
+            conv.messages.contains { $0.from.localizedCaseInsensitiveContains(from) }
+        }) {
+            selectedConversation = conversation
+            // Bring app to front
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            print("Opened conversation from notification: \(conversation.person)")
+        }
     }
 }
 

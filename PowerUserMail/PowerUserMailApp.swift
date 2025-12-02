@@ -7,9 +7,54 @@
 
 import CoreData
 import SwiftUI
+import UserNotifications
+
+// App Delegate for handling notifications
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set notification delegate
+        UNUserNotificationCenter.current().delegate = self
+        
+        // Initialize notification manager
+        Task { @MainActor in
+            await NotificationManager.shared.requestAuthorization()
+        }
+    }
+    
+    // Handle notification when app is in foreground
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is active
+        completionHandler([.banner, .sound, .badge])
+    }
+    
+    // Handle notification tap
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        
+        if let from = userInfo["from"] as? String {
+            // Post notification to open this conversation
+            NotificationCenter.default.post(
+                name: Notification.Name("OpenConversation"),
+                object: nil,
+                userInfo: ["from": from]
+            )
+        }
+        
+        completionHandler()
+    }
+}
 
 @main
 struct PowerUserMailApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     let persistenceController = PersistenceController.shared
 
     var body: some Scene {

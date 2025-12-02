@@ -142,7 +142,7 @@ final class InboxViewModel: ObservableObject {
         }
 
         // Sort conversations: pinned first, then by latest message time
-        self.conversations = finalConversations.sorted { c1, c2 in
+        let sortedConversations = finalConversations.sorted { c1, c2 in
             let pinned1 = ConversationStateStore.shared.isPinned(conversationId: c1.id)
             let pinned2 = ConversationStateStore.shared.isPinned(conversationId: c2.id)
             
@@ -155,6 +155,15 @@ final class InboxViewModel: ObservableObject {
             guard let m1 = c1.latestMessage, let m2 = c2.latestMessage else { return false }
             return m1.receivedAt > m2.receivedAt
         }
+        
+        self.conversations = sortedConversations
+        
+        // Check for new messages and send notifications
+        NotificationManager.shared.checkForNewMessages(conversations: sortedConversations, myEmail: myEmail)
+        
+        // Update badge count with unread count
+        let unreadCount = sortedConversations.filter { $0.hasUnread }.count
+        NotificationManager.shared.updateBadgeCount(unreadCount)
     }
 
     func reload() {
