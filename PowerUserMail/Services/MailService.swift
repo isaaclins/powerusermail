@@ -30,6 +30,7 @@ protocol MailService {
     var account: Account? { get }
     var isAuthenticated: Bool { get }
     func authenticate() async throws -> Account
+    func restoreAccount(_ account: Account)  // Restore a previously authenticated account
     func fetchInbox() async throws -> [EmailThread]
     func fetchInboxStream() -> AsyncThrowingStream<EmailThread, Error>
     func fetchMessage(id: String) async throws -> Email
@@ -275,8 +276,19 @@ final class GmailService: NSObject, MailService {
 
     override init() {
         super.init()
-        if let stored = loadStoredAccount(for: .gmail) {
-            account = stored
+        // Don't auto-load - let AccountViewModel manage this
+    }
+    
+    func restoreAccount(_ account: Account) {
+        self.account = account
+        // Restore tokens to keychain for this account
+        if !account.accessToken.isEmpty {
+            storeTokensForProvider(
+                provider,
+                accessToken: account.accessToken,
+                refreshToken: account.refreshToken ?? "",
+                expiresIn: 3600  // Will refresh if needed
+            )
         }
     }
 
@@ -639,8 +651,19 @@ final class OutlookService: NSObject, MailService {
 
     override init() {
         super.init()
-        if let stored = loadStoredAccount(for: .outlook) {
-            account = stored
+        // Don't auto-load - let AccountViewModel manage this
+    }
+    
+    func restoreAccount(_ account: Account) {
+        self.account = account
+        // Restore tokens to keychain for this account
+        if !account.accessToken.isEmpty {
+            storeTokensForProvider(
+                provider,
+                accessToken: account.accessToken,
+                refreshToken: account.refreshToken ?? "",
+                expiresIn: 3600  // Will refresh if needed
+            )
         }
     }
 

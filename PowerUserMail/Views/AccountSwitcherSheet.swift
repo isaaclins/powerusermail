@@ -33,60 +33,70 @@ struct AccountSwitcherSheet: View {
                     
                     VStack(spacing: 0) {
                         ForEach(accountViewModel.accounts) { account in
-                            Button {
-                                accountViewModel.selectedAccount = account
-                                isPresented = false
-                            } label: {
-                                HStack(spacing: 12) {
-                                    // Provider icon
-                                    Group {
-                                        if account.provider == .gmail {
-                                            Image("GmailLogo")
-                                                .resizable()
-                                                .scaledToFit()
-                                        } else {
-                                            Image("OutlookLogo")
-                                                .resizable()
-                                                .scaledToFit()
+                            HStack(spacing: 12) {
+                                // Main account button
+                                Button {
+                                    accountViewModel.selectedAccount = account
+                                    isPresented = false
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        // Provider icon
+                                        Group {
+                                            if account.provider == .gmail {
+                                                Image("GmailLogo")
+                                                    .resizable()
+                                                    .scaledToFit()
+                                            } else {
+                                                Image("OutlookLogo")
+                                                    .resizable()
+                                                    .scaledToFit()
+                                            }
                                         }
-                                    }
-                                    .frame(width: 24, height: 24)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(account.displayName.isEmpty ? account.emailAddress : account.displayName)
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(.primary)
+                                        .frame(width: 24, height: 24)
                                         
-                                        if !account.displayName.isEmpty {
-                                            Text(account.emailAddress)
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(account.displayName.isEmpty ? account.emailAddress : account.displayName)
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundStyle(.primary)
+                                            
+                                            if !account.displayName.isEmpty {
+                                                Text(account.emailAddress)
+                                                    .font(.system(size: 12))
+                                                    .foregroundStyle(.secondary)
+                                            }
                                         }
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Selected indicator
-                                    if accountViewModel.selectedAccount?.id == account.id {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
-                                            .font(.system(size: 18))
-                                    } else {
-                                        Image(systemName: "chevron.right")
-                                            .foregroundStyle(.secondary)
-                                            .font(.system(size: 12))
+                                        
+                                        Spacer()
+                                        
+                                        // Selected indicator
+                                        if accountViewModel.selectedAccount?.id == account.id {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                                .font(.system(size: 18))
+                                        }
                                     }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(accountViewModel.selectedAccount?.id == account.id 
-                                              ? Color.accentColor.opacity(0.1) 
-                                              : Color.clear)
-                                )
+                                .buttonStyle(.plain)
+                                
+                                // Remove account button
+                                Button {
+                                    accountViewModel.removeAccount(account)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 16))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Remove account")
                             }
-                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(accountViewModel.selectedAccount?.id == account.id 
+                                          ? Color.accentColor.opacity(0.1) 
+                                          : Color.clear)
+                            )
                             
                             if account.id != accountViewModel.accounts.last?.id {
                                 Divider()
