@@ -10,6 +10,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var accountViewModel = AccountViewModel()
+    @StateObject private var inboxViewModel = InboxViewModel()
     @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
     @State private var isShowingAccountSwitcher = false
@@ -42,9 +43,14 @@ struct ContentView: View {
                     isPresented: $isShowingCommandPalette,
                     searchText: $commandSearch,
                     actions: commandActions,
+                    conversations: inboxViewModel.conversations,
                     onSelect: { action in
                         commandSearch = ""
                         action.perform()
+                    },
+                    onSelectConversation: { conversation in
+                        commandSearch = ""
+                        selectedConversation = conversation
                     }
                 )
                 .frame(maxWidth: 500)
@@ -78,6 +84,22 @@ struct ContentView: View {
             _ in
             isShowingAccountSwitcher = true
         }
+        // Conversation action notifications
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ArchiveCurrentConversation"))) { _ in
+            archiveCurrentConversation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PinCurrentConversation"))) { _ in
+            pinCurrentConversation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UnpinCurrentConversation"))) { _ in
+            unpinCurrentConversation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentUnread"))) { _ in
+            markCurrentUnread()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentRead"))) { _ in
+            markCurrentRead()
+        }
         .onAppear {
             // Load all command plugins
             CommandLoader.loadAll()
@@ -93,7 +115,7 @@ struct ContentView: View {
         let myEmail = accountViewModel.selectedAccount?.emailAddress ?? ""
         return NavigationSplitView(columnVisibility: $columnVisibility) {
             InboxView(
-                service: service, myEmail: myEmail, selectedConversation: $selectedConversation
+                viewModel: inboxViewModel, service: service, myEmail: myEmail, selectedConversation: $selectedConversation
             )
             .navigationSplitViewColumnWidth(min: 280, ideal: 320)
             .navigationTitle("Chats")
@@ -202,15 +224,17 @@ struct ContentView: View {
     }
 
     private func toggleCommandPalette() {
-        // Use commands from the registry
-        commandActions = CommandRegistry.shared.getCommands()
+        // Use commands from the registry, passing context
+        let hasConversation = selectedConversation != nil
+        commandActions = CommandRegistry.shared.getCommands(hasSelectedConversation: hasConversation)
         
         // Add context-specific commands
-        if selectedConversation != nil {
+        if hasConversation {
             commandActions.insert(
                 CommandAction(
                     title: "Reply to Chat", keywords: ["reply", "respond", "answer"],
-                    iconSystemName: "arrowshape.turn.up.left"
+                    iconSystemName: "arrowshape.turn.up.left",
+                    isContextual: true
                 ) {
                     openReply()
                 }, at: 0
@@ -223,7 +247,47 @@ struct ContentView: View {
     }
 
     private func configureCommands() {
-        commandActions = CommandRegistry.shared.getCommands()
+        commandActions = CommandRegistry.shared.getCommands(hasSelectedConversation: selectedConversation != nil)
+    }
+    
+    // MARK: - Conversation Actions
+    
+    private func archiveCurrentConversation() {
+        guard let conversation = selectedConversation else { return }
+        // TODO: Implement actual archive API call
+        // For now, just clear selection (simulating moving to archive)
+        selectedConversation = nil
+        print("Archived conversation: \(conversation.person)")
+    }
+    
+    private func pinCurrentConversation() {
+        guard let conversation = selectedConversation else { return }
+        ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
+        if ConversationStateStore.shared.isPinned(conversationId: conversation.id) {
+            print("Pinned conversation: \(conversation.person)")
+        }
+    }
+    
+    private func unpinCurrentConversation() {
+        guard let conversation = selectedConversation else { return }
+        if ConversationStateStore.shared.isPinned(conversationId: conversation.id) {
+            ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
+            print("Unpinned conversation: \(conversation.person)")
+        }
+    }
+    
+    private func markCurrentUnread() {
+        guard let conversation = selectedConversation else { return }
+        if ConversationStateStore.shared.isRead(conversationId: conversation.id) {
+            ConversationStateStore.shared.toggleRead(conversationId: conversation.id)
+            print("Marked as unread: \(conversation.person)")
+        }
+    }
+    
+    private func markCurrentRead() {
+        guard let conversation = selectedConversation else { return }
+        ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+        print("Marked as read: \(conversation.person)")
     }
 }
 

@@ -5,14 +5,34 @@ struct CommandPaletteView: View {
     @Binding var isPresented: Bool
     @Binding var searchText: String
     let actions: [CommandAction]
+    let conversations: [Conversation]
     let onSelect: (CommandAction) -> Void
+    let onSelectConversation: (Conversation) -> Void
 
     @State private var selectedIndex: Int = 0
+    @State private var selectedSection: SearchSection = .commands
     @FocusState private var isFocused: Bool
+    
+    enum SearchSection {
+        case commands, people
+    }
 
     // Computed property that filters based on current searchText
     private var filteredResults: [CommandAction] {
         filterActions(query: searchText, actions: actions)
+    }
+    
+    // Filter conversations/people based on search
+    private var filteredPeople: [Conversation] {
+        guard !searchText.isEmpty else { return [] }
+        let query = searchText.lowercased()
+        return conversations.filter { conversation in
+            conversation.person.lowercased().contains(query) ||
+            conversation.messages.contains { msg in
+                msg.from.lowercased().contains(query) ||
+                msg.to.joined(separator: " ").lowercased().contains(query)
+            }
+        }.prefix(5).map { $0 } // Limit to 5 results
     }
     
     // Pure function for filtering - no side effects
@@ -161,6 +181,10 @@ struct CommandPaletteView: View {
         return score
     }
 
+    private var totalItemCount: Int {
+        filteredResults.count + filteredPeople.count
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Search Bar
@@ -169,7 +193,7 @@ struct CommandPaletteView: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
 
-                TextField("Type a command...", text: $searchText)
+                TextField("Type a command or contact...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .foregroundColor(.white)
@@ -204,32 +228,71 @@ struct CommandPaletteView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        if filteredResults.isEmpty {
-                            ContentUnavailableView(
-                                "No Commands Found", systemImage: "command.slash"
-                            )
-                            .padding(.vertical, 40)
-                        } else {
+                        // Commands Section
+                        if !filteredResults.isEmpty {
+                            SectionHeader(title: "Commands")
+                            
                             ForEach(Array(filteredResults.enumerated()), id: \.element.id) {
                                 index, action in
-                                CommandRow(action: action, isSelected: index == selectedIndex)
-                                    .id("\(searchText)-\(index)")
+                                CommandRow(action: action, isSelected: selectedSection == .commands && index == selectedIndex)
+                                    .id("cmd-\(index)")
                                     .onTapGesture {
                                         onSelect(action)
                                         isPresented = false
                                     }
                                     .onHover { hovering in
-                                        if hovering { selectedIndex = index }
+                                        if hovering { 
+                                            selectedSection = .commands
+                                            selectedIndex = index 
+                                        }
                                     }
                             }
+                        }
+                        
+                        // People Section
+                        if !filteredPeople.isEmpty {
+                            SectionHeader(title: "People")
+                            
+                            ForEach(Array(filteredPeople.enumerated()), id: \.element.id) {
+                                index, conversation in
+                                PersonRow(conversation: conversation, isSelected: selectedSection == .people && index == selectedIndex)
+                                    .id("person-\(index)")
+                                    .onTapGesture {
+                                        onSelectConversation(conversation)
+                                        isPresented = false
+                                    }
+                                    .onHover { hovering in
+                                        if hovering { 
+                                            selectedSection = .people
+                                            selectedIndex = index 
+                                        }
+                                    }
+                            }
+                        }
+                        
+                        // No results
+                        if filteredResults.isEmpty && filteredPeople.isEmpty && !searchText.isEmpty {
+                            ContentUnavailableView(
+                                "No Results Found", systemImage: "magnifyingglass"
+                            )
+                            .padding(.vertical, 40)
+                        }
+                        
+                        // Empty state
+                        if searchText.isEmpty && filteredResults.isEmpty {
+                            ContentUnavailableView(
+                                "No Commands Found", systemImage: "command.slash"
+                            )
+                            .padding(.vertical, 40)
                         }
                     }
                     .id(searchText) // Force re-render when search changes
                 }
-                .frame(maxHeight: 300)
+                .frame(maxHeight: 350)
                 .onChange(of: selectedIndex) { _, newIndex in
                     withAnimation {
-                        proxy.scrollTo(newIndex, anchor: .center)
+                        let scrollId = selectedSection == .commands ? "cmd-\(newIndex)" : "person-\(newIndex)"
+                        proxy.scrollTo(scrollId, anchor: .center)
                     }
                 }
             }
@@ -245,27 +308,148 @@ struct CommandPaletteView: View {
         .environment(\.colorScheme, .dark)
         .onAppear {
             selectedIndex = 0
+            selectedSection = .commands
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isFocused = true
             }
         }
         .onChange(of: searchText) { _, _ in
             selectedIndex = 0
+            selectedSection = filteredResults.isEmpty && !filteredPeople.isEmpty ? .people : .commands
         }
     }
 
     private func moveSelection(_ direction: Int) {
-        let count = filteredResults.count
-        guard count > 0 else { return }
-        selectedIndex = (selectedIndex + direction + count) % count
+        let commandCount = filteredResults.count
+        let peopleCount = filteredPeople.count
+        
+        if direction > 0 {
+            // Moving down
+            if selectedSection == .commands {
+                if selectedIndex < commandCount - 1 {
+                    selectedIndex += 1
+                } else if peopleCount > 0 {
+                    selectedSection = .people
+                    selectedIndex = 0
+                }
+            } else {
+                if selectedIndex < peopleCount - 1 {
+                    selectedIndex += 1
+                } else if commandCount > 0 {
+                    selectedSection = .commands
+                    selectedIndex = 0
+                }
+            }
+        } else {
+            // Moving up
+            if selectedSection == .commands {
+                if selectedIndex > 0 {
+                    selectedIndex -= 1
+                } else if peopleCount > 0 {
+                    selectedSection = .people
+                    selectedIndex = peopleCount - 1
+                }
+            } else {
+                if selectedIndex > 0 {
+                    selectedIndex -= 1
+                } else if commandCount > 0 {
+                    selectedSection = .commands
+                    selectedIndex = commandCount - 1
+                }
+            }
+        }
     }
 
     private func executeSelected() {
-        guard !filteredResults.isEmpty else { return }
-        let action = filteredResults[selectedIndex]
-        guard action.isEnabled else { return }
-        isPresented = false
-        onSelect(action)
+        if selectedSection == .commands {
+            guard !filteredResults.isEmpty else { return }
+            let action = filteredResults[selectedIndex]
+            guard action.isEnabled else { return }
+            isPresented = false
+            onSelect(action)
+        } else {
+            guard !filteredPeople.isEmpty else { return }
+            let conversation = filteredPeople[selectedIndex]
+            isPresented = false
+            onSelectConversation(conversation)
+        }
+    }
+}
+
+struct SectionHeader: View {
+    let title: String
+    
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+    }
+}
+
+struct PersonRow: View {
+    let conversation: Conversation
+    let isSelected: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Avatar
+            ZStack {
+                Circle()
+                    .fill(avatarGradient)
+                    .frame(width: 28, height: 28)
+                
+                Text(initials)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(conversation.person)
+                    .font(.body)
+                    .foregroundStyle(isSelected ? .white : .primary)
+                
+                if let lastMessage = conversation.latestMessage {
+                    Text(lastMessage.subject)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? .white.opacity(0.7) : .secondary)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+            
+            Text("Contact")
+                .font(.caption)
+                .foregroundStyle(isSelected ? .white.opacity(0.6) : Color.secondary.opacity(0.6))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(isSelected ? Color.accentColor : Color.clear)
+        .contentShape(Rectangle())
+    }
+    
+    private var initials: String {
+        let words = conversation.person.split(separator: " ").prefix(2)
+        return words.compactMap { $0.first.map(String.init) }.joined()
+    }
+    
+    private var avatarGradient: LinearGradient {
+        let colors = [
+            [Color.blue, Color.purple],
+            [Color.orange, Color.red],
+            [Color.green, Color.teal],
+            [Color.pink, Color.purple],
+            [Color.indigo, Color.blue]
+        ]
+        let index = abs(conversation.person.hashValue) % colors.count
+        return LinearGradient(colors: colors[index], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
@@ -307,7 +491,9 @@ struct CommandRow: View {
             CommandAction(title: "New Email") {},
             CommandAction(title: "Archive") {},
         ],
-        onSelect: { _ in }
+        conversations: [],
+        onSelect: { _ in },
+        onSelectConversation: { _ in }
     )
     .padding()
 }

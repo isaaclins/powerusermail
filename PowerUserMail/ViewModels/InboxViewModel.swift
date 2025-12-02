@@ -9,22 +9,38 @@ final class InboxViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var selectedConversation: Conversation?
 
-    private let service: MailService
-    private let myEmail: String
+    private var service: MailService?
+    private var myEmail: String = ""
     private var timer: Timer?
     private var loadedThreads: [EmailThread] = []
+    private var isConfigured = false
 
-    init(service: MailService, myEmail: String) {
-        self.service = service
-        self.myEmail = myEmail
+    init() {
         NotificationCenter.default.addObserver(
             forName: Notification.Name("ReloadInbox"), object: nil, queue: .main
         ) { [weak self] _ in
             self?.reload()
         }
-
-        // Start polling every 15 seconds
+    }
+    
+    func configure(service: MailService, myEmail: String) {
+        // Skip if already configured with same values
+        if isConfigured && self.myEmail == myEmail { return }
+        
+        self.service = service
+        self.myEmail = myEmail
+        self.isConfigured = true
+        
+        // Reset and start fresh
+        timer?.invalidate()
+        loadedThreads = []
+        conversations = []
+        
+        // Start polling
         startPolling()
+        
+        // Initial load
+        Task { await loadInbox() }
     }
 
     deinit {
@@ -40,7 +56,7 @@ final class InboxViewModel: ObservableObject {
     }
 
     func loadInbox() async {
-        guard !isLoading else { return }
+        guard !isLoading, let service = service else { return }
         isLoading = true
         errorMessage = nil
         
