@@ -8,14 +8,22 @@ struct ChatView: View {
 
     @State private var replyText = ""
     @State private var isSending = false
+    @State private var localMessages: [Email] = [] // Optimistic messages before reload
     @FocusState private var isReplyFocused: Bool
+    
+    // Combined messages: original + locally sent (not yet synced)
+    private var allMessages: [Email] {
+        let existingIds = Set(conversation.messages.map { $0.id })
+        let newLocals = localMessages.filter { !existingIds.contains($0.id) }
+        return conversation.messages + newLocals
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(conversation.messages) { email in
+                        ForEach(allMessages) { email in
                             ChatBubble(email: email, myEmail: myEmail)
                                 .id(email.id)
                         }
@@ -23,6 +31,13 @@ struct ChatView: View {
                     .padding()
                 }
                 .onChange(of: conversation) { _ in
+                    // Clear local messages when conversation updates (they're now in the real data)
+                    localMessages.removeAll { msg in
+                        conversation.messages.contains { $0.id == msg.id }
+                    }
+                    scrollToBottom(proxy: proxy)
+                }
+                .onChange(of: localMessages.count) { _ in
                     scrollToBottom(proxy: proxy)
                 }
                 .onAppear {
@@ -69,20 +84,20 @@ struct ChatView: View {
     private func sendReply() {
         guard !replyText.isEmpty else { return }
         isSending = true
+        
+        // Capture the message content before clearing
+        let messageBody = replyText
 
         Task {
             do {
                 // Determine recipient
-                // If it's a person-based chat, conversation.person is the email (mostly)
-                // But safer to look at participants excluding me
                 let participants = conversation.messages.flatMap { [$0.from] + $0.to + $0.cc }
                 let uniqueParticipants = Set(participants)
                 let recipients = uniqueParticipants.filter {
                     !$0.localizedCaseInsensitiveContains(myEmail)
-                        && !$0.localizedCaseInsensitiveContains("topic:")  // Filter out our topic hack
+                        && !$0.localizedCaseInsensitiveContains("topic:")
                 }
 
-                // Fallback if no other recipients found (e.g. talking to self), use the conversation ID if it looks like an email
                 let finalTo = recipients.isEmpty ? [conversation.person] : Array(recipients)
 
                 // Subject
@@ -93,19 +108,42 @@ struct ChatView: View {
                 let draft = DraftMessage(
                     to: finalTo,
                     subject: subject,
-                    body: replyText
+                    body: messageBody
                 )
+                
+                // Create optimistic local message immediately
+                let preview = String(messageBody.prefix(100))
+                let optimisticMessage = Email(
+                    id: "local-\(UUID().uuidString)",
+                    threadId: conversation.id,
+                    subject: subject,
+                    from: myEmail,
+                    to: finalTo,
+                    cc: [],
+                    preview: preview,
+                    body: messageBody,
+                    receivedAt: Date(),
+                    isRead: true
+                )
+                
+                // Add to local messages immediately (optimistic update)
+                await MainActor.run {
+                    localMessages.append(optimisticMessage)
+                    replyText = ""
+                }
 
                 try await service.send(message: draft)
 
-                // Clear text
-                replyText = ""
-
-                // Trigger reload (optional, depends on how your app updates)
+                // Trigger reload in background to sync with server
                 NotificationCenter.default.post(name: Notification.Name("ReloadInbox"), object: nil)
 
             } catch {
                 print("Failed to send reply: \(error)")
+                // Remove the optimistic message on failure
+                await MainActor.run {
+                    localMessages.removeAll { $0.body == messageBody }
+                    replyText = messageBody // Restore the text so user can retry
+                }
             }
             isSending = false
         }

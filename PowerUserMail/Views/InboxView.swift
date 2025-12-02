@@ -2,15 +2,15 @@ import SwiftUI
 
 // MARK: - Inbox Filter
 enum InboxFilter: String, CaseIterable {
-    case all = "All"
     case unread = "Unread"
+    case all = "All"
     case archived = "Archived"
     case pinned = "Pinned"
     
     var shortcutNumber: Int {
         switch self {
-        case .all: return 1
-        case .unread: return 2
+        case .unread: return 1
+        case .all: return 2
         case .archived: return 3
         case .pinned: return 4
         }
@@ -27,13 +27,19 @@ enum InboxFilter: String, CaseIterable {
 }
 
 struct InboxView: View {
-    @StateObject private var viewModel: InboxViewModel
+    @ObservedObject var viewModel: InboxViewModel
     @Binding var selectedConversation: Conversation?
     @State private var activeFilter: InboxFilter = .all
+    
+    let service: MailService
+    let myEmail: String
 
-    init(service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>) {
-        _viewModel = StateObject(wrappedValue: InboxViewModel(service: service, myEmail: myEmail))
+    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>) {
+        self.viewModel = viewModel
+        self.service = service
+        self.myEmail = myEmail
         _selectedConversation = selectedConversation
+        // Don't configure here - do it in onAppear to ensure proper lifecycle
     }
     
     private var filteredConversations: [Conversation] {
@@ -78,7 +84,6 @@ struct InboxView: View {
             }
             .padding(.vertical, 4)
         }
-        .task { await viewModel.loadInbox() }
         .safeAreaInset(edge: .bottom) {
             // Show loading progress at bottom while loading
             if viewModel.isLoading && !viewModel.conversations.isEmpty {
@@ -131,10 +136,10 @@ struct InboxView: View {
         }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter2"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
+            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
@@ -145,6 +150,10 @@ struct InboxView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) { _ in
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
+        }
+        .onAppear {
+            // Ensure viewModel is configured for this account
+            viewModel.configure(service: service, myEmail: myEmail)
         }
     }
     

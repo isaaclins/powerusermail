@@ -1,0 +1,104 @@
+# Release Pipeline - Creates releases when merging to main
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for changelog
+
+      - name: Select Xcode version
+        run: |
+          # Use the latest available Xcode 16.x
+          if [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+          elif [ -d "/Applications/Xcode.app" ]; then
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Get version from project
+        id: version
+        run: |
+          # Extract version from Xcode project or use date-based version
+          VERSION=$(date +'%Y.%m.%d')
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          FULL_VERSION="${VERSION}-${BUILD_NUMBER}"
+          echo "version=${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${FULL_VERSION}"
+
+      - name: Build Release
+        run: |
+          xcodebuild build \
+            -project PowerUserMail.xcodeproj \
+            -scheme PowerUserMail \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create App Archive
+        run: |
+          APP_PATH="build/Build/Products/Release/PowerUserMail.app"
+          if [ -d "$APP_PATH" ]; then
+            cd build/Build/Products/Release
+            zip -r PowerUserMail-${{ steps.version.outputs.version }}.zip PowerUserMail.app
+            mv PowerUserMail-${{ steps.version.outputs.version }}.zip ../../../../
+          else
+            echo "App not found at expected path, searching..."
+            find build -name "*.app" -type d
+          fi
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get commits since last tag or last 20 commits
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | head -50)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
+
+          # Write to file for multi-line support
+          echo "## What's Changed" > changelog.md
+          echo "" >> changelog.md
+          echo "$COMMITS" >> changelog.md
+          echo "" >> changelog.md
+          echo "---" >> changelog.md
+          echo "_Built from commit $(git rev-parse --short HEAD)_" >> changelog.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: PowerUserMail v${{ steps.version.outputs.version }}
+          body_path: changelog.md
+          draft: false
+          prerelease: false
+          files: |
+            PowerUserMail-${{ steps.version.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

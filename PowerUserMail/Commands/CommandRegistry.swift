@@ -27,6 +27,9 @@ protocol CommandPlugin {
     /// Whether the command is currently available
     var isEnabled: Bool { get }
     
+    /// Whether this command requires a conversation to be selected
+    var isContextual: Bool { get }
+    
     /// Execute the command
     func execute()
 }
@@ -36,6 +39,7 @@ extension CommandPlugin {
     var isEnabled: Bool { true }
     var keywords: [String] { [] }
     var iconSystemName: String { "command" }
+    var isContextual: Bool { false }
 }
 
 /// Central registry for all commands
@@ -95,12 +99,13 @@ final class CommandRegistry: ObservableObject {
     }
     
     /// Get all commands for the command palette
-    func getCommands() -> [CommandAction] {
-        print("\n🔍 getCommands() called - returning \(commands.count) commands:")
-        for cmd in commands {
+    func getCommands(hasSelectedConversation: Bool = false) -> [CommandAction] {
+        let filtered = hasSelectedConversation ? commands : commands.filter { !$0.isContextual }
+        print("\n🔍 getCommands(hasSelectedConversation: \(hasSelectedConversation)) - returning \(filtered.count) commands:")
+        for cmd in filtered {
             print("  📌 \"\(cmd.title)\" keywords=\(cmd.keywords)")
         }
-        return commands
+        return filtered
     }
     
     /// Filter commands by search text
@@ -134,6 +139,7 @@ final class CommandRegistry: ObservableObject {
                 keywords: plugin.keywords,
                 iconSystemName: plugin.iconSystemName,
                 isEnabled: plugin.isEnabled,
+                isContextual: plugin.isContextual,
                 perform: plugin.execute
             )
             newCommands.append(action)

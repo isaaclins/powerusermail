@@ -9,22 +9,74 @@ final class InboxViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var selectedConversation: Conversation?
 
-    private let service: MailService
-    private let myEmail: String
+    private var service: MailService?
+    private var myEmail: String = ""
     private var timer: Timer?
     private var loadedThreads: [EmailThread] = []
+    private var isConfigured = false
 
-    init(service: MailService, myEmail: String) {
-        self.service = service
-        self.myEmail = myEmail
+    init() {
         NotificationCenter.default.addObserver(
             forName: Notification.Name("ReloadInbox"), object: nil, queue: .main
         ) { [weak self] _ in
             self?.reload()
         }
-
-        // Start polling every 15 seconds
+    }
+    
+    func configure(service: MailService, myEmail: String) {
+        // CRITICAL: Check if this is a different account or same account
+        let isSameAccount = isConfigured && self.myEmail.lowercased() == myEmail.lowercased()
+        
+        // Skip ONLY if exact same account is already fully configured and loaded
+        if isSameAccount && !conversations.isEmpty {
+            print("✓ Same account already configured: \(myEmail)")
+            return
+        }
+        
+        print("🔄 Configuring account: \(myEmail) (was: \(self.myEmail.isEmpty ? "none" : self.myEmail))")
+        
+        // Stop existing polling FIRST
+        timer?.invalidate()
+        timer = nil
+        
+        // CRITICAL: ALWAYS clear ALL data when configuring ANY account
+        // This ensures complete isolation
+        print("🧹 Clearing all cached data for account isolation")
+        loadedThreads.removeAll()
+        conversations.removeAll()
+        selectedConversation = nil
+        errorMessage = nil
+        loadingProgress = ""
+        isLoading = false
+        
+        // Reset notification manager
+        NotificationManager.shared.resetForNewAccount()
+        
+        // Set new account info
+        self.service = service
+        self.myEmail = myEmail
+        self.isConfigured = true
+        
+        // Start polling for new account
         startPolling()
+        
+        // Initial load
+        Task { await loadInbox() }
+    }
+    
+    /// Force clear all data (call when signing out or switching accounts)
+    func clearAllData() {
+        timer?.invalidate()
+        timer = nil
+        loadedThreads = []
+        conversations = []
+        selectedConversation = nil
+        errorMessage = nil
+        loadingProgress = ""
+        isLoading = false
+        isConfigured = false
+        myEmail = ""
+        service = nil
     }
 
     deinit {
@@ -40,7 +92,7 @@ final class InboxViewModel: ObservableObject {
     }
 
     func loadInbox() async {
-        guard !isLoading else { return }
+        guard !isLoading, let service = service else { return }
         isLoading = true
         errorMessage = nil
         
@@ -126,7 +178,7 @@ final class InboxViewModel: ObservableObject {
         }
 
         // Sort conversations: pinned first, then by latest message time
-        self.conversations = finalConversations.sorted { c1, c2 in
+        let sortedConversations = finalConversations.sorted { c1, c2 in
             let pinned1 = ConversationStateStore.shared.isPinned(conversationId: c1.id)
             let pinned2 = ConversationStateStore.shared.isPinned(conversationId: c2.id)
             
@@ -139,6 +191,15 @@ final class InboxViewModel: ObservableObject {
             guard let m1 = c1.latestMessage, let m2 = c2.latestMessage else { return false }
             return m1.receivedAt > m2.receivedAt
         }
+        
+        self.conversations = sortedConversations
+        
+        // Check for new messages and send notifications
+        NotificationManager.shared.checkForNewMessages(conversations: sortedConversations, myEmail: myEmail)
+        
+        // Update badge count with unread count
+        let unreadCount = sortedConversations.filter { $0.hasUnread }.count
+        NotificationManager.shared.updateBadgeCount(unreadCount)
     }
 
     func reload() {

@@ -7,22 +7,22 @@
 
 import Foundation
 
-struct ShowAllCommand: CommandPlugin {
-    let id = "show-all"
-    let title = "Show All Messages"
-    let keywords = ["show", "all", "messages", "filter", "everything", "inbox", "clear", "reset", "sam"]
-    let iconSystemName = "tray"
+struct ShowUnreadCommand: CommandPlugin {
+    let id = "show-unread"
+    let title = "Show Unread"
+    let keywords = ["show", "unread", "filter", "new", "unseen", "inbox", "su"]
+    let iconSystemName = "envelope.badge"
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter1"), object: nil)
     }
 }
 
-struct ShowUnreadCommand: CommandPlugin {
-    let id = "show-unread"
-    let title = "Show Unread"
-    let keywords = ["show", "unread", "filter", "new", "unseen", "inbox", "su"]
-    let iconSystemName = "envelope.badge"
+struct ShowAllCommand: CommandPlugin {
+    let id = "show-all"
+    let title = "Show All Messages"
+    let keywords = ["show", "all", "messages", "filter", "everything", "inbox", "clear", "reset", "sam"]
+    let iconSystemName = "tray"
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter2"), object: nil)

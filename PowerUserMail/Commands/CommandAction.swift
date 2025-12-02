@@ -7,14 +7,16 @@ struct CommandAction: Identifiable {
     let iconSystemName: String
     let perform: () -> Void
     var isEnabled: Bool
+    var isContextual: Bool
 
-    init(id: UUID = UUID(), title: String, keywords: [String] = [], iconSystemName: String = "command", isEnabled: Bool = true, perform: @escaping () -> Void) {
+    init(id: UUID = UUID(), title: String, keywords: [String] = [], iconSystemName: String = "command", isEnabled: Bool = true, isContextual: Bool = false, perform: @escaping () -> Void) {
         self.id = id
         self.title = title
         self.keywords = keywords
         self.iconSystemName = iconSystemName
         self.perform = perform
         self.isEnabled = isEnabled
+        self.isContextual = isContextual
     }
 }
 

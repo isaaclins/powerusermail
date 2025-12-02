@@ -36,6 +36,13 @@ struct CommandLoader {
         ShowArchivedCommand(),
         ShowPinnedCommand(),
         
+        // Conversation actions (contextual - only shown when chat is selected)
+        ArchiveConversationCommand(),
+        PinConversationCommand(),
+        UnpinConversationCommand(),
+        MarkUnreadCommand(),
+        MarkReadCommand(),
+        
         // System
         QuitAppCommand(),
     ]
