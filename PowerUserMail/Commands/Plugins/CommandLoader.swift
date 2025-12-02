@@ -44,6 +44,7 @@ struct CommandLoader {
         MarkReadCommand(),
         
         // System
+        CheckForUpdatesCommand(),
         QuitAppCommand(),
     ]
     
