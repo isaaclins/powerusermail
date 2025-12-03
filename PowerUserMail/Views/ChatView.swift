@@ -393,8 +393,12 @@ struct ChatBubble: View {
                body.contains("<table") || body.contains("<p>") || body.contains("<br")
     }
 
+    private var bubbleColor: Color {
+        isMe ? Color.accentColor : Color(nsColor: .systemGray).opacity(0.35)
+    }
+    
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 0) {
             // For HTML content, use minimal spacing to allow more width
             if isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
 
@@ -429,9 +433,10 @@ struct ChatBubble: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(isHTMLContent ? 8 : 12)
-            .background(isMe ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(16)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(
+                ChatBubbleShape(isMe: isMe)
+                    .fill(bubbleColor)
+            )
             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
             .frame(maxWidth: isHTMLContent ? .infinity : 500, alignment: isMe ? .trailing : .leading)
             .contextMenu {
@@ -453,6 +458,118 @@ struct ChatBubble: View {
             if !isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
         }
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+    }
+}
+
+// MARK: - Chat Bubble Shape with integrated tail (iMessage style)
+struct ChatBubbleShape: Shape {
+    let isMe: Bool
+    
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width
+        let height = rect.height
+        let radius: CGFloat = min(18, min(width, height) / 4)
+        let tailSize: CGFloat = 8
+        
+        var path = Path()
+        
+        if isMe {
+            // Right-aligned bubble with tail on bottom-right
+            // Start from top-left corner
+            path.move(to: CGPoint(x: radius, y: 0))
+            
+            // Top edge
+            path.addLine(to: CGPoint(x: width - radius - tailSize, y: 0))
+            
+            // Top-right corner (smooth curve)
+            path.addQuadCurve(
+                to: CGPoint(x: width - tailSize, y: radius),
+                control: CGPoint(x: width - tailSize, y: 0)
+            )
+            
+            // Right edge down to before the tail
+            path.addLine(to: CGPoint(x: width - tailSize, y: height - radius - tailSize))
+            
+            // Curve into the tail
+            path.addQuadCurve(
+                to: CGPoint(x: width, y: height),
+                control: CGPoint(x: width - tailSize, y: height)
+            )
+            
+            // Curve back from the tail tip
+            path.addQuadCurve(
+                to: CGPoint(x: width - tailSize - radius, y: height),
+                control: CGPoint(x: width - tailSize - 2, y: height)
+            )
+            
+            // Bottom edge
+            path.addLine(to: CGPoint(x: radius, y: height))
+            
+            // Bottom-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: 0, y: height - radius),
+                control: CGPoint(x: 0, y: height)
+            )
+            
+            // Left edge
+            path.addLine(to: CGPoint(x: 0, y: radius))
+            
+            // Top-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: radius, y: 0),
+                control: CGPoint(x: 0, y: 0)
+            )
+            
+        } else {
+            // Left-aligned bubble with tail on bottom-left
+            // Start from top-left corner (after tail space)
+            path.move(to: CGPoint(x: tailSize + radius, y: 0))
+            
+            // Top edge
+            path.addLine(to: CGPoint(x: width - radius, y: 0))
+            
+            // Top-right corner
+            path.addQuadCurve(
+                to: CGPoint(x: width, y: radius),
+                control: CGPoint(x: width, y: 0)
+            )
+            
+            // Right edge
+            path.addLine(to: CGPoint(x: width, y: height - radius))
+            
+            // Bottom-right corner
+            path.addQuadCurve(
+                to: CGPoint(x: width - radius, y: height),
+                control: CGPoint(x: width, y: height)
+            )
+            
+            // Bottom edge to before the tail
+            path.addLine(to: CGPoint(x: tailSize + radius, y: height))
+            
+            // Curve into the tail from the right
+            path.addQuadCurve(
+                to: CGPoint(x: 0, y: height),
+                control: CGPoint(x: tailSize + 2, y: height)
+            )
+            
+            // Curve back up from tail tip
+            path.addQuadCurve(
+                to: CGPoint(x: tailSize, y: height - radius - tailSize),
+                control: CGPoint(x: tailSize, y: height)
+            )
+            
+            // Left edge
+            path.addLine(to: CGPoint(x: tailSize, y: radius))
+            
+            // Top-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: tailSize + radius, y: 0),
+                control: CGPoint(x: tailSize, y: 0)
+            )
+        }
+        
+        path.closeSubpath()
+        return path
     }
 }
 
