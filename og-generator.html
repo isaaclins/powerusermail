@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OG Image Generator - Screenshot this!</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 40px;
+        }
+        .og-image {
+            width: 1200px;
+            height: 630px;
+            background: linear-gradient(135deg, #0a0a0b 0%, #1a1a1d 100%);
+            position: relative;
+            overflow: hidden;
+            font-family: 'Syne', system-ui, sans-serif;
+        }
+        .grid {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+        .glow {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(168,85,247,0.25) 0%, transparent 70%);
+            top: -100px;
+            right: -100px;
+        }
+        .content {
+            position: relative;
+            z-index: 1;
+            padding: 60px 80px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+        .logo img {
+            width: 64px;
+            height: 64px;
+            border-radius: 14px;
+        }
+        .logo span {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fafafa;
+        }
+        h1 {
+            font-size: 72px;
+            font-weight: 800;
+            color: #fafafa;
+            line-height: 1.1;
+            margin-bottom: 24px;
+        }
+        .gradient {
+            background: linear-gradient(135deg, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle {
+            font-size: 28px;
+            color: #a1a1aa;
+            font-weight: 500;
+            margin-bottom: auto;
+        }
+        .features {
+            display: flex;
+            gap: 16px;
+        }
+        .feature {
+            padding: 12px 24px;
+            background: rgba(168,85,247,0.15);
+            border: 1px solid rgba(168,85,247,0.3);
+            border-radius: 50px;
+            color: #a855f7;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .feature.mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .url {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            color: #52525b;
+            font-size: 18px;
+        }
+        .instructions {
+            text-align: center;
+            margin-top: 20px;
+            color: #aaa;
+            font-family: system-ui;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="og-image">
+            <div class="grid"></div>
+            <div class="glow"></div>
+            <div class="content">
+                <div class="logo">
+                    <img src="logo.png" alt="PowerUserMail">
+                    <span>PowerUserMail</span>
+                </div>
+                <h1>Email at the<br><span class="gradient">Speed of Thought</span></h1>
+                <p class="subtitle">Keyboard-first email client for macOS • Free & Open Source</p>
+                <div class="features">
+                    <div class="feature mono">⌘K</div>
+                    <div class="feature">Gmail</div>
+                    <div class="feature">Outlook</div>
+                    <div class="feature">Shortcuts</div>
+                    <div class="feature">Native</div>
+                </div>
+            </div>
+            <div class="url">isaaclins.com/powerusermail</div>
+        </div>
+        <p class="instructions">
+            👆 Screenshot this at exactly 1200×630px and save as <code>og-image.png</code>
+        </p>
+    </div>
+</body>
+</html>
+
