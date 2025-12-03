@@ -59,7 +59,7 @@ final class UpdateManager: ObservableObject {
             
             // Find the .zip asset
             if let zipAsset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) {
-                downloadURL = URL(string: zipAsset.browserDownloadURL)
+                downloadURL = URL(string: zipAsset.browserDownloadUrl)
             }
             
             // Compare versions
@@ -203,7 +203,7 @@ struct GitHubRelease: Codable {
 
 struct GitHubAsset: Codable {
     let name: String
-    let browserDownloadURL: String
+    let browserDownloadUrl: String  // snake_case converts to camelCase (not URL)
     let size: Int
     let downloadCount: Int
 }
