@@ -1,0 +1,39 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -project /Users/isaaclins/Documents/github/powerusermail/PowerUserMail.xcodeproj -scheme PowerUserMail -destination platform=macOS "-only-testing:PowerUserMailTests/PerformanceTests" "-only-testing:PowerUserMailTests/LargeScalePerformanceTests"
+
+2025-12-03 11:58:38.592 xcodebuild[64553:462260] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006030-001608213484001C, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006030-001608213484001C, name:My Mac }
+2025-12-03 11:58:41.832 xcodebuild[64553:462260] [MT] IDETestOperationsObserverDebug: 2.943 elapsed -- Testing started completed.
+2025-12-03 11:58:41.832 xcodebuild[64553:462260] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2025-12-03 11:58:41.832 xcodebuild[64553:462260] [MT] IDETestOperationsObserverDebug: 2.943 sec, +2.943 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/isaaclins/Library/Developer/Xcode/DerivedData/PowerUserMail-gvdhvcshoezefzdhuczvndldbosg/Logs/Test/Test-PowerUserMail-2025.12.03_11-58-38-+0100.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started
+Test suite 'PerformanceTests' started on 'My Mac - PowerUserMail (64576)'
+Test case 'PerformanceTests.testCommandFiltering()' passed on 'My Mac - PowerUserMail (64576)' (0.002 seconds)
+Test case 'PerformanceTests.testCommandRegistryLookup()' passed on 'My Mac - PowerUserMail (64576)' (0.008 seconds)
+Test case 'PerformanceTests.testConversationCreation()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testConversationStateRead()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testConversationStateWrite()' passed on 'My Mac - PowerUserMail (64576)' (0.004 seconds)
+Test case 'PerformanceTests.testDateFormatting()' passed on 'My Mac - PowerUserMail (64576)' (0.003 seconds)
+Test case 'PerformanceTests.testEmailCreation()' passed on 'My Mac - PowerUserMail (64576)' (0.000 seconds)
+Test case 'PerformanceTests.testEmailParsing()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testFilterConversations()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testFuzzySearchCommands()' passed on 'My Mac - PowerUserMail (64576)' (0.007 seconds)
+Test case 'PerformanceTests.testInitialsGeneration()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testMuteConversation()' passed on 'My Mac - PowerUserMail (64576)' (0.002 seconds)
+Test case 'PerformanceTests.testPerformanceMonitorOverhead()' passed on 'My Mac - PowerUserMail (64576)' (0.001 seconds)
+Test case 'PerformanceTests.testPinConversation()' passed on 'My Mac - PowerUserMail (64576)' (0.002 seconds)
+Test case 'PerformanceTests.testReportGeneration()' passed on 'My Mac - PowerUserMail (64576)' (0.009 seconds)
+Test case 'PerformanceTests.testSearchConversations()' passed on 'My Mac - PowerUserMail (64576)' (0.003 seconds)
+Test case 'PerformanceTests.testSortConversations()' passed on 'My Mac - PowerUserMail (64576)' (0.007 seconds)
+Test suite 'LargeScalePerformanceTests' started on 'My Mac - PowerUserMail (64576)'
+Test case 'LargeScalePerformanceTests.testCommandSearch100Times()' passed on 'My Mac - PowerUserMail (64576)' (0.365 seconds)
+Test case 'LargeScalePerformanceTests.testFilter1000Conversations()' passed on 'My Mac - PowerUserMail (64576)' (0.270 seconds)
+Test case 'LargeScalePerformanceTests.testSort1000Conversations()' passed on 'My Mac - PowerUserMail (64576)' (0.363 seconds)
