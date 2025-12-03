@@ -190,6 +190,37 @@ final class UpdateManager: ObservableObject {
         NSWorkspace.shared.open(url)
     }
     
+    /// Determines the best install location for the app
+    /// - If running from /Applications, update in place
+    /// - If running from Xcode's DerivedData/Debug, install to /Applications
+    /// - Otherwise, try the current location, fallback to /Applications
+    private func bestInstallLocation() -> URL {
+        let currentAppURL = Bundle.main.bundleURL
+        let currentDir = currentAppURL.deletingLastPathComponent().path
+        
+        // If already in /Applications, update in place
+        if currentDir == "/Applications" {
+            return URL(fileURLWithPath: "/Applications")
+        }
+        
+        // If running from Xcode's build directory (contains DerivedData or Debug/Release)
+        if currentDir.contains("DerivedData") || 
+           currentDir.contains("/Debug") || 
+           currentDir.contains("/Release") ||
+           currentDir.contains("Xcode") {
+            print("📍 Detected development environment, installing to /Applications")
+            return URL(fileURLWithPath: "/Applications")
+        }
+        
+        // Check if we can write to the current directory
+        if FileManager.default.isWritableFile(atPath: currentDir) {
+            return URL(fileURLWithPath: currentDir)
+        }
+        
+        // Default to /Applications
+        return URL(fileURLWithPath: "/Applications")
+    }
+    
     // MARK: - One-Click Install
     
     func installUpdate() async {
@@ -235,12 +266,16 @@ final class UpdateManager: ObservableObject {
             try xattr.run()
             xattr.waitUntilExit()
             
-            // Install
-            updateProgressWindow(progressWindow, text: "Installing...")
-            let currentAppURL = Bundle.main.bundleURL
-            let installDir = currentAppURL.deletingLastPathComponent()
+            // Install - determine best install location
+            let installDir = bestInstallLocation()
+            updateProgressWindow(progressWindow, text: "Installing to \(installDir.path)...")
             let destinationURL = installDir.appendingPathComponent(appName)
             let backupURL = installDir.appendingPathComponent("\(appName).backup")
+            
+            // Ensure we can write to the directory
+            guard FileManager.default.isWritableFile(atPath: installDir.path) else {
+                throw UpdateError.noWritePermission(installDir.path)
+            }
             
             try? FileManager.default.removeItem(at: backupURL)
             if FileManager.default.fileExists(atPath: destinationURL.path) {
@@ -363,6 +398,7 @@ enum UpdateError: LocalizedError {
     case httpError(Int)
     case extractionFailed
     case appNotFound
+    case noWritePermission(String)
     
     var errorDescription: String? {
         switch self {
@@ -376,6 +412,8 @@ enum UpdateError: LocalizedError {
             return "Failed to extract the downloaded file"
         case .appNotFound:
             return "Could not find the app in the downloaded archive"
+        case .noWritePermission(let path):
+            return "No write permission for \(path). Try moving the app to /Applications first."
         }
     }
 }
