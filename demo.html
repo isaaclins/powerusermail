@@ -6,7 +6,7 @@
     <title>PowerUserMail Demo</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=SF+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -14,78 +14,28 @@
             box-sizing: border-box;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a1d;
-            color: #fafafa;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-        }
-
-        .app-window {
-            width: 1200px;
-            height: 750px;
-            background: #0a0a0b;
-            border-radius: 12px;
+        html, body {
+            height: 100%;
             overflow: hidden;
-            box-shadow: 
-                0 50px 100px -20px rgba(0, 0, 0, 0.7),
-                0 0 0 1px rgba(255, 255, 255, 0.1);
-            display: flex;
-            flex-direction: column;
         }
 
-        /* Title Bar */
-        .titlebar {
-            height: 52px;
-            background: #1a1a1d;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-            display: flex;
-            align-items: center;
-            padding: 0 16px;
-            -webkit-app-region: drag;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0b;
+            color: #fafafa;
         }
 
-        .window-controls {
-            display: flex;
-            gap: 8px;
-        }
-
-        .window-controls span {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
-
-        .btn-close { background: #ff5f57; }
-        .btn-minimize { background: #febc2e; }
-        .btn-maximize { background: #28c840; }
-
-        .titlebar-title {
-            flex: 1;
-            text-align: center;
-            font-size: 13px;
-            color: #71717a;
-            font-weight: 500;
-        }
-
-        .titlebar-spacer {
-            width: 52px;
-        }
-
-        /* Main Content */
-        .main-content {
-            flex: 1;
+        /* Main Layout */
+        .app {
+            height: 100%;
             display: flex;
             overflow: hidden;
         }
 
         /* Sidebar */
         .sidebar {
-            width: 320px;
+            width: 280px;
+            min-width: 280px;
             background: #111113;
             border-right: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
@@ -93,44 +43,71 @@
         }
 
         .sidebar-header {
-            padding: 16px;
+            padding: 12px;
         }
 
         .search-box {
             background: #1a1a1d;
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 8px;
-            padding: 10px 14px;
+            padding: 8px 12px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             color: #71717a;
-            font-size: 14px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .search-box:hover {
+            border-color: rgba(255, 255, 255, 0.1);
+            background: #1f1f22;
         }
 
         .search-box svg {
             opacity: 0.5;
+            flex-shrink: 0;
+        }
+
+        .search-box span {
+            flex: 1;
+        }
+
+        .search-box kbd {
+            font-family: -apple-system, BlinkMacSystemFont, monospace;
+            font-size: 11px;
+            opacity: 0.5;
+            background: rgba(255,255,255,0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
         }
 
         .filter-bar {
             display: flex;
-            gap: 8px;
-            padding: 0 16px 16px;
+            gap: 6px;
+            padding: 0 12px 12px;
+            flex-wrap: wrap;
         }
 
         .filter-pill {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 5px 10px;
+            border-radius: 16px;
+            font-size: 11px;
             font-weight: 500;
             background: transparent;
-            color: #a1a1aa;
+            color: #71717a;
             border: 1px solid rgba(255, 255, 255, 0.06);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
+        }
+
+        .filter-pill:hover {
+            background: rgba(255, 255, 255, 0.03);
+            color: #a1a1aa;
         }
 
         .filter-pill.active {
@@ -140,25 +117,25 @@
         }
 
         .filter-pill kbd {
-            font-family: 'SF Mono', monospace;
-            font-size: 10px;
+            font-family: -apple-system, monospace;
+            font-size: 9px;
             opacity: 0.7;
         }
 
         .conversation-list {
             flex: 1;
             overflow-y: auto;
-            padding: 0 8px;
+            padding: 0 6px;
         }
 
         .conversation-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px;
-            border-radius: 10px;
+            gap: 10px;
+            padding: 10px;
+            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: all 0.1s;
             margin-bottom: 2px;
         }
 
@@ -176,13 +153,13 @@
         }
 
         .conv-avatar {
-            width: 40px;
-            height: 40px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 600;
             color: white;
             flex-shrink: 0;
@@ -197,31 +174,31 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .conv-name {
-            font-size: 14px;
+            font-size: 13px;
             color: #a1a1aa;
             font-weight: 500;
         }
 
         .conv-time {
-            font-size: 11px;
-            color: #71717a;
+            font-size: 10px;
+            color: #52525b;
         }
 
         .conv-preview {
-            font-size: 13px;
-            color: #71717a;
+            font-size: 12px;
+            color: #52525b;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
         .unread-dot {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             background: #a855f7;
             border-radius: 50%;
             flex-shrink: 0;
@@ -233,66 +210,61 @@
             display: flex;
             flex-direction: column;
             background: #0a0a0b;
+            min-width: 0;
         }
 
         .chat-header {
-            padding: 16px 24px;
+            padding: 12px 16px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
 
         .chat-avatar {
-            width: 44px;
-            height: 44px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             color: white;
         }
 
         .chat-info h2 {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .chat-info p {
-            font-size: 12px;
-            color: #71717a;
+            font-size: 11px;
+            color: #52525b;
         }
 
         .chat-messages {
             flex: 1;
-            padding: 24px;
+            padding: 16px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 12px;
         }
 
         .message {
-            max-width: 70%;
-            padding: 12px 16px;
-            border-radius: 16px;
-            font-size: 14px;
-            line-height: 1.5;
-            animation: messageIn 0.3s ease;
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 13px;
+            line-height: 1.4;
+            animation: messageIn 0.25s ease;
         }
 
         @keyframes messageIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .message.received {
@@ -308,28 +280,28 @@
         }
 
         .message-time {
-            font-size: 11px;
-            color: #71717a;
-            margin-top: 6px;
+            font-size: 10px;
+            color: #52525b;
+            margin-top: 4px;
         }
 
         .message.sent .message-time {
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(255, 255, 255, 0.6);
         }
 
         .chat-input-area {
-            padding: 16px 24px;
+            padding: 12px 16px;
             border-top: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .chat-input {
             background: #1a1a1d;
             border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 14px 18px;
+            border-radius: 10px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .chat-input input {
@@ -338,29 +310,31 @@
             border: none;
             outline: none;
             color: #fafafa;
-            font-size: 14px;
+            font-size: 13px;
+            font-family: inherit;
         }
 
         .chat-input input::placeholder {
-            color: #71717a;
+            color: #52525b;
         }
 
         .send-btn {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             background: #a855f7;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             color: white;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .send-btn:hover {
             background: #9333ea;
+            transform: scale(1.05);
         }
 
         /* Command Palette */
@@ -370,16 +344,16 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(4px);
             display: flex;
             align-items: flex-start;
             justify-content: center;
-            padding-top: 120px;
+            padding-top: 80px;
             z-index: 100;
             opacity: 0;
             pointer-events: none;
-            transition: opacity 0.2s;
+            transition: opacity 0.15s;
         }
 
         .command-palette-overlay.visible {
@@ -388,14 +362,14 @@
         }
 
         .command-palette {
-            width: 560px;
+            width: 420px;
             background: #111113;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
+            border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            transform: scale(0.95) translateY(-10px);
-            transition: transform 0.2s;
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+            transform: scale(0.96) translateY(-8px);
+            transition: transform 0.15s;
         }
 
         .command-palette-overlay.visible .command-palette {
@@ -403,7 +377,7 @@
         }
 
         .command-input {
-            padding: 20px;
+            padding: 14px 16px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
@@ -412,26 +386,26 @@
             background: none;
             border: none;
             outline: none;
-            font-size: 18px;
+            font-size: 15px;
             color: #fafafa;
             font-family: inherit;
         }
 
         .command-input input::placeholder {
-            color: #71717a;
+            color: #52525b;
         }
 
         .command-results {
-            max-height: 400px;
+            max-height: 280px;
             overflow-y: auto;
-            padding: 8px;
+            padding: 6px;
         }
 
         .command-section {
-            padding: 8px 12px 4px;
-            font-size: 11px;
+            padding: 6px 10px 4px;
+            font-size: 10px;
             font-weight: 600;
-            color: #71717a;
+            color: #52525b;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
@@ -439,31 +413,31 @@
         .command-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-radius: 10px;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.1s;
         }
 
         .command-item:hover,
         .command-item.selected {
-            background: rgba(168, 85, 247, 0.15);
+            background: rgba(168, 85, 247, 0.12);
         }
 
         .command-item.selected {
-            background: rgba(168, 85, 247, 0.25);
+            background: rgba(168, 85, 247, 0.2);
         }
 
         .command-icon {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             background: #1a1a1d;
-            border-radius: 8px;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #a855f7;
+            font-size: 14px;
         }
 
         .command-text {
@@ -471,140 +445,87 @@
         }
 
         .command-text h4 {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .command-text p {
-            font-size: 12px;
-            color: #71717a;
+            font-size: 11px;
+            color: #52525b;
         }
 
         .command-shortcut {
-            font-family: 'SF Mono', monospace;
-            font-size: 12px;
-            color: #71717a;
+            font-family: -apple-system, monospace;
+            font-size: 11px;
+            color: #52525b;
             background: #1a1a1d;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        /* Typing Indicator */
-        .typing-cursor {
-            display: inline-block;
-            width: 2px;
-            height: 1.2em;
-            background: #a855f7;
-            animation: blink 1s step-end infinite;
-            vertical-align: text-bottom;
-            margin-left: 2px;
-        }
-
-        @keyframes blink {
-            50% { opacity: 0; }
-        }
-
-        /* Loading skeleton */
-        .skeleton {
-            background: linear-gradient(90deg, #1a1a1d 0%, #252528 50%, #1a1a1d 100%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
+            padding: 3px 6px;
             border-radius: 4px;
         }
 
-        @keyframes shimmer {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
         }
 
-        /* Keyboard hint */
-        .keyboard-hint {
-            position: fixed;
-            bottom: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-size: 14px;
-            color: #a1a1aa;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            backdrop-filter: blur(10px);
+        ::-webkit-scrollbar-track {
+            background: transparent;
         }
 
-        .keyboard-hint kbd {
-            background: #1a1a1d;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-family: 'SF Mono', monospace;
-            font-size: 12px;
-            color: #fafafa;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
         }
     </style>
 </head>
 <body>
-    <div class="app-window">
-        <div class="titlebar">
-            <div class="window-controls">
-                <span class="btn-close"></span>
-                <span class="btn-minimize"></span>
-                <span class="btn-maximize"></span>
+    <div class="app">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="search-box" id="searchBox">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    <span>Search emails...</span>
+                    <kbd>⌘K</kbd>
+                </div>
             </div>
-            <div class="titlebar-title">PowerUserMail</div>
-            <div class="titlebar-spacer"></div>
+
+            <div class="filter-bar">
+                <div class="filter-pill active"><kbd>⌘1</kbd> Unread</div>
+                <div class="filter-pill"><kbd>⌘2</kbd> All</div>
+                <div class="filter-pill"><kbd>⌘3</kbd> Archived</div>
+            </div>
+
+            <div class="conversation-list" id="conversationList"></div>
         </div>
 
-        <div class="main-content">
-            <div class="sidebar">
-                <div class="sidebar-header">
-                    <div class="search-box">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="m21 21-4.35-4.35"/>
-                        </svg>
-                        <span>Search emails...</span>
-                        <span style="margin-left: auto; opacity: 0.5;">⌘K</span>
-                    </div>
-                </div>
-
-                <div class="filter-bar">
-                    <div class="filter-pill active"><kbd>⌘1</kbd> Unread</div>
-                    <div class="filter-pill"><kbd>⌘2</kbd> All</div>
-                    <div class="filter-pill"><kbd>⌘3</kbd> Archived</div>
-                </div>
-
-                <div class="conversation-list" id="conversationList">
-                    <!-- Conversations will be populated by JS -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <div class="chat-avatar" id="chatAvatar" style="background: #a855f7;">JD</div>
+                <div class="chat-info">
+                    <h2 id="chatName">John Doe</h2>
+                    <p id="chatEmail">john.doe@example.com</p>
                 </div>
             </div>
 
-            <div class="chat-area">
-                <div class="chat-header" id="chatHeader">
-                    <div class="chat-avatar" id="chatAvatar" style="background: #a855f7;">JD</div>
-                    <div class="chat-info">
-                        <h2 id="chatName">John Doe</h2>
-                        <p id="chatEmail">john.doe@example.com</p>
-                    </div>
-                </div>
+            <div class="chat-messages" id="chatMessages"></div>
 
-                <div class="chat-messages" id="chatMessages">
-                    <!-- Messages will be populated by JS -->
-                </div>
-
-                <div class="chat-input-area">
-                    <div class="chat-input">
-                        <input type="text" placeholder="Type a message..." id="messageInput">
-                        <button class="send-btn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 2 11 13"/>
-                                <path d="M22 2 15 22l-4-9-9-4 20-7z"/>
-                            </svg>
-                        </button>
-                    </div>
+            <div class="chat-input-area">
+                <div class="chat-input">
+                    <input type="text" placeholder="Type a message..." id="messageInput">
+                    <button class="send-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2 11 13"/>
+                            <path d="M22 2 15 22l-4-9-9-4 20-7z"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -616,35 +537,29 @@
             <div class="command-input">
                 <input type="text" placeholder="Type a command..." id="commandInput">
             </div>
-            <div class="command-results" id="commandResults">
-                <!-- Commands will be populated by JS -->
-            </div>
+            <div class="command-results" id="commandResults"></div>
         </div>
-    </div>
-
-    <div class="keyboard-hint">
-        Press <kbd>⌘</kbd> + <kbd>K</kbd> to open command palette
     </div>
 
     <script>
         // Demo data
         const conversations = [
             { id: 1, name: 'John Doe', email: 'john.doe@example.com', initials: 'JD', color: '#a855f7', preview: 'Hey! Are we still on for tomorrow?', time: '2 min', unread: true },
-            { id: 2, name: 'Alice Smith', email: 'alice@company.com', initials: 'AS', color: '#3b82f6', preview: 'The project update looks great!', time: '1 hour', unread: true },
-            { id: 3, name: 'Bob Wilson', email: 'bob.wilson@startup.io', initials: 'BW', color: '#ec4899', preview: 'Thanks for your help yesterday', time: '3 hours', unread: false },
-            { id: 4, name: 'Sarah Chen', email: 'sarah@design.co', initials: 'SC', color: '#22c55e', preview: 'New mockups attached', time: 'Yesterday', unread: false },
-            { id: 5, name: 'Mike Johnson', email: 'mike.j@tech.com', initials: 'MJ', color: '#f59e0b', preview: 'Re: Q4 Planning', time: '2 days', unread: false },
+            { id: 2, name: 'Alice Smith', email: 'alice@company.com', initials: 'AS', color: '#3b82f6', preview: 'The project update looks great!', time: '1 hr', unread: true },
+            { id: 3, name: 'Bob Wilson', email: 'bob.wilson@startup.io', initials: 'BW', color: '#ec4899', preview: 'Thanks for your help yesterday', time: '3 hr', unread: false },
+            { id: 4, name: 'Sarah Chen', email: 'sarah@design.co', initials: 'SC', color: '#22c55e', preview: 'New mockups attached', time: 'Yday', unread: false },
+            { id: 5, name: 'Mike Johnson', email: 'mike.j@tech.com', initials: 'MJ', color: '#f59e0b', preview: 'Re: Q4 Planning', time: '2d', unread: false },
         ];
 
         const messages = {
             1: [
                 { text: 'Hey! Are we still on for the meeting tomorrow?', sent: false, time: '10:30 AM' },
                 { text: 'Yes! 3pm works great for me 👍', sent: true, time: '10:32 AM' },
-                { text: 'Perfect! I\'ve shared the agenda in the calendar invite. Let me know if you have any questions before then.', sent: false, time: '10:33 AM' },
+                { text: 'Perfect! I\'ve shared the agenda in the calendar invite.', sent: false, time: '10:33 AM' },
             ],
             2: [
                 { text: 'Hi! Just reviewed the project update you sent.', sent: false, time: '9:15 AM' },
-                { text: 'The progress looks amazing! Great work on the UI improvements.', sent: false, time: '9:15 AM' },
+                { text: 'The progress looks amazing! Great work on the UI.', sent: false, time: '9:15 AM' },
                 { text: 'Thanks Alice! The team worked really hard on it.', sent: true, time: '9:20 AM' },
             ]
         };
@@ -653,17 +568,12 @@
             { icon: '✉️', title: 'New Email', desc: 'Compose a new message', shortcut: '⌘N' },
             { icon: '✓', title: 'Mark All as Read', desc: 'Clear all unread badges', shortcut: '⌘⇧R' },
             { icon: '📌', title: 'Pin Conversation', desc: 'Keep at top of inbox', shortcut: '⌘P' },
-            { icon: '📁', title: 'Archive Conversation', desc: 'Move to archive', shortcut: '⌘E' },
+            { icon: '📁', title: 'Archive', desc: 'Move to archive', shortcut: '⌘E' },
             { icon: '🔄', title: 'Switch Account', desc: 'Change email account', shortcut: '⌘,' },
-            { icon: '🔍', title: 'Search Emails', desc: 'Find messages', shortcut: '⌘F' },
         ];
 
-        // State
         let selectedConversation = 0;
-        let commandPaletteVisible = false;
-        let currentCommandIndex = 0;
 
-        // DOM elements
         const conversationList = document.getElementById('conversationList');
         const chatMessages = document.getElementById('chatMessages');
         const chatName = document.getElementById('chatName');
@@ -673,11 +583,11 @@
         const commandInput = document.getElementById('commandInput');
         const commandResults = document.getElementById('commandResults');
         const messageInput = document.getElementById('messageInput');
+        const searchBox = document.getElementById('searchBox');
 
-        // Render conversations
         function renderConversations() {
             conversationList.innerHTML = conversations.map((conv, i) => `
-                <div class="conversation-item ${i === selectedConversation ? 'selected' : ''} ${conv.unread ? 'unread' : ''}" data-id="${conv.id}">
+                <div class="conversation-item ${i === selectedConversation ? 'selected' : ''} ${conv.unread ? 'unread' : ''}" data-id="${i}">
                     <div class="conv-avatar" style="background: ${conv.color}">${conv.initials}</div>
                     <div class="conv-content">
                         <div class="conv-header">
@@ -689,9 +599,17 @@
                     ${conv.unread ? '<div class="unread-dot"></div>' : ''}
                 </div>
             `).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.conversation-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    selectedConversation = parseInt(item.dataset.id);
+                    renderConversations();
+                    renderMessages(conversations[selectedConversation].id);
+                });
+            });
         }
 
-        // Render messages
         function renderMessages(convId) {
             const conv = conversations.find(c => c.id === convId);
             const msgs = messages[convId] || [];
@@ -711,7 +629,6 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // Render commands
         function renderCommands(filter = '', selectedIndex = 0) {
             const filtered = filter 
                 ? commands.filter(c => c.title.toLowerCase().includes(filter.toLowerCase()))
@@ -732,34 +649,29 @@
             `;
         }
 
-        // Show/hide command palette
         function toggleCommandPalette(show) {
-            commandPaletteVisible = show;
             if (show) {
                 commandPalette.classList.add('visible');
                 commandInput.value = '';
                 renderCommands();
-                commandInput.focus();
+                setTimeout(() => commandInput.focus(), 50);
             } else {
                 commandPalette.classList.remove('visible');
             }
         }
 
-        // Type text animation
         async function typeText(element, text, speed = 50) {
             element.value = '';
             for (let i = 0; i < text.length; i++) {
                 element.value += text[i];
-                await sleep(speed + Math.random() * 30);
+                await sleep(speed + Math.random() * 20);
             }
         }
 
-        // Sleep helper
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // Add message animation
         async function addMessage(text, sent = true) {
             const conv = conversations[selectedConversation];
             const msg = { text, sent, time: 'Just now' };
@@ -773,33 +685,32 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // Demo sequence
+        // Demo loop
         async function runDemo() {
-            // Initial render
             renderConversations();
             renderMessages(conversations[0].id);
             
-            await sleep(2000);
+            await sleep(2500);
             
-            // Select different conversation
+            // Switch conversation
             selectedConversation = 1;
             renderConversations();
-            await sleep(300);
+            await sleep(200);
             renderMessages(conversations[1].id);
             
             await sleep(2000);
             
-            // Back to first conversation
+            // Back to first
             selectedConversation = 0;
             renderConversations();
-            await sleep(300);
+            await sleep(200);
             renderMessages(conversations[0].id);
             
             await sleep(1500);
             
             // Type a reply
-            await typeText(messageInput, 'Sounds good! See you then 🎉', 40);
-            await sleep(500);
+            await typeText(messageInput, 'Sounds good! See you then 🎉', 35);
+            await sleep(400);
             messageInput.value = '';
             await addMessage('Sounds good! See you then 🎉', true);
             
@@ -807,54 +718,52 @@
             
             // Open command palette
             toggleCommandPalette(true);
-            await sleep(800);
+            await sleep(600);
             
             // Type in command palette
-            await typeText(commandInput, 'mark', 80);
-            renderCommands('mark', 0);
-            
-            await sleep(1000);
-            
-            // Select command
-            currentCommandIndex = 0;
+            await typeText(commandInput, 'mark', 70);
             renderCommands('mark', 0);
             
             await sleep(800);
-            
-            // Close command palette
             toggleCommandPalette(false);
             
-            // Mark conversations as read
+            // Mark as read
             conversations.forEach(c => c.unread = false);
             renderConversations();
             
             await sleep(2000);
             
-            // Open command palette again
+            // Open palette again
             toggleCommandPalette(true);
-            await sleep(500);
-            await typeText(commandInput, 'new', 80);
+            await sleep(400);
+            await typeText(commandInput, 'new', 70);
             renderCommands('new', 0);
             
-            await sleep(1200);
+            await sleep(1000);
             toggleCommandPalette(false);
             
-            await sleep(2000);
+            await sleep(2500);
             
             // Reset and loop
             conversations[0].unread = true;
             conversations[1].unread = true;
+            messages[1] = messages[1].slice(0, 3);
             selectedConversation = 0;
             
-            // Restart demo
             runDemo();
         }
 
-        // Keyboard shortcuts for manual control
+        // Click handlers
+        searchBox.addEventListener('click', () => toggleCommandPalette(true));
+        commandPalette.addEventListener('click', (e) => {
+            if (e.target === commandPalette) toggleCommandPalette(false);
+        });
+
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            if (e.metaKey && e.key === 'k') {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
                 e.preventDefault();
-                toggleCommandPalette(!commandPaletteVisible);
+                toggleCommandPalette(!commandPalette.classList.contains('visible'));
             }
             if (e.key === 'Escape') {
                 toggleCommandPalette(false);
@@ -866,4 +775,3 @@
     </script>
 </body>
 </html>
-
