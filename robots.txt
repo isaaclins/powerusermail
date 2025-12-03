@@ -1,0 +1,12 @@
+# PowerUserMail - Robots.txt
+# https://isaaclins.com/powerusermail/
+
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://isaaclins.com/powerusermail/sitemap.xml
+
+# Crawl-delay (be nice to search engines)
+Crawl-delay: 1
+
