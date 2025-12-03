@@ -402,8 +402,10 @@ struct ChatBubble: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            // For HTML content, use minimal spacing to allow more width
-            if isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
+            if isMe {
+                // Push "my" messages to the right with consistent padding
+                Spacer(minLength: 60)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 if !isMe && !email.subject.isEmpty {
@@ -435,15 +437,14 @@ struct ChatBubble: View {
                     .foregroundStyle(isMe ? .white.opacity(0.8) : .secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(isHTMLContent ? 8 : 12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(
                 ChatBubbleShape(isMe: isMe)
                     .fill(bubbleColor)
             )
             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-            .frame(
-                maxWidth: isHTMLContent ? .infinity : 500, alignment: isMe ? .trailing : .leading
-            )
+            .frame(maxWidth: isHTMLContent ? 600 : 450, alignment: isMe ? .trailing : .leading)
             .contextMenu {
                 if PromotedThreadStore.shared.isPromoted(threadId: email.threadId) {
                     Button {
@@ -460,8 +461,12 @@ struct ChatBubble: View {
                 }
             }
 
-            if !isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
+            if !isMe {
+                // Push "their" messages to the left with consistent padding
+                Spacer(minLength: 60)
+            }
         }
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
     }
 }
