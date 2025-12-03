@@ -106,6 +106,13 @@ struct ContentView: View {
                 openConversationFromNotification(from: from)
             }
         }
+        // Handle authentication required notification
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AuthenticationRequired"))) { notification in
+            if let email = notification.userInfo?["email"] as? String {
+                print("🔐 Authentication required for: \(email)")
+                // The InboxView will show the re-auth UI, but we could also show an alert here
+            }
+        }
         .onAppear {
             // Load all command plugins
             CommandLoader.loadAll()
@@ -141,7 +148,25 @@ struct ContentView: View {
         let myEmail = accountViewModel.selectedAccount?.emailAddress ?? ""
         return NavigationSplitView(columnVisibility: $columnVisibility) {
             InboxView(
-                viewModel: inboxViewModel, service: service, myEmail: myEmail, selectedConversation: $selectedConversation
+                viewModel: inboxViewModel, 
+                service: service, 
+                myEmail: myEmail, 
+                selectedConversation: $selectedConversation,
+                onReauthenticate: {
+                    // Trigger re-authentication for the current provider
+                    if let account = accountViewModel.selectedAccount {
+                        Task {
+                            // Reset the inbox state first
+                            inboxViewModel.resetAuthState()
+                            // Re-authenticate (this will show the OAuth flow)
+                            await accountViewModel.authenticate(provider: account.provider)
+                            // After successful auth, reload inbox
+                            if accountViewModel.selectedAccount != nil {
+                                await inboxViewModel.loadInbox()
+                            }
+                        }
+                    }
+                }
             )
             .navigationSplitViewColumnWidth(min: 280, ideal: 320)
             .navigationTitle("Chats")

@@ -33,12 +33,14 @@ struct InboxView: View {
     
     let service: MailService
     let myEmail: String
+    var onReauthenticate: (() -> Void)?  // Callback to trigger re-authentication
 
-    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>) {
+    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>, onReauthenticate: (() -> Void)? = nil) {
         self.viewModel = viewModel
         self.service = service
         self.myEmail = myEmail
         _selectedConversation = selectedConversation
+        self.onReauthenticate = onReauthenticate
         // Don't configure here - do it in onAppear to ensure proper lifecycle
     }
     
@@ -66,18 +68,19 @@ struct InboxView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(filteredConversations) { conversation in
-                    ConversationRow(
-                        conversation: conversation,
-                        isSelected: selectedConversation?.id == conversation.id,
-                        displayName: displayName(for: conversation.person)
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            viewModel.select(conversation: conversation)
-                            selectedConversation = conversation
-                            // Mark as read when opened
-                            ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+                        ConversationRow(
+                            conversation: conversation,
+                            isSelected: selectedConversation?.id == conversation.id,
+                            displayName: displayName(for: conversation.person)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                viewModel.select(conversation: conversation)
+                                selectedConversation = conversation
+                                // Mark as read when opened
+                                ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+                            }
                         }
                     }
                 }
@@ -113,18 +116,32 @@ struct InboxView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+            } else if viewModel.requiresReauthentication {
+                // Special UI for authentication errors
+                authenticationRequiredView
             } else if let error = viewModel.errorMessage, viewModel.conversations.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.orange)
+                    
+                    Text("Something went wrong")
+                        .font(.headline)
+                    
                     Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("Retry") {
+                    
+                    Button("Try Again") {
                         Task { await viewModel.loadInbox() }
                     }
+                    .buttonStyle(.borderedProminent)
                 }
-                .padding()
+                .padding(24)
                 .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(radius: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .shadow(color: .black.opacity(0.15), radius: 20)
             } else if viewModel.conversations.isEmpty && !viewModel.isLoading {
                 ContentUnavailableView("No Messages", systemImage: "tray")
             } else if filteredConversations.isEmpty && !viewModel.isLoading && activeFilter != .all {
@@ -133,7 +150,6 @@ struct InboxView: View {
                     systemImage: activeFilter.icon
                 )
             }
-        }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) { _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
@@ -155,6 +171,61 @@ struct InboxView: View {
             // Ensure viewModel is configured for this account
             viewModel.configure(service: service, myEmail: myEmail)
         }
+    }
+    
+    // MARK: - Authentication Required View
+    private var authenticationRequiredView: some View {
+        VStack(spacing: 16) {
+            // Icon with animation
+            Image(systemName: "key.horizontal")
+                .font(.system(size: 40))
+                .foregroundStyle(.orange)
+                .symbolEffect(.pulse)
+            
+            Text("Session Expired")
+                .font(.title2.bold())
+            
+            if let email = viewModel.reauthEmail {
+                Text("Your session for **\(email)** has expired.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Text("Please sign in again to continue using PowerUserMail.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            VStack(spacing: 10) {
+                Button {
+                    onReauthenticate?()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Sign In Again")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                
+                Button("Switch Account") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("ShowAccountSwitcher"),
+                        object: nil
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+            }
+            .padding(.top, 8)
+        }
+        .padding(32)
+        .frame(maxWidth: 320)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.2), radius: 24)
     }
     
     // MARK: - Filter Bar

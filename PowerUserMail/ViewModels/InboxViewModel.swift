@@ -8,12 +8,19 @@ final class InboxViewModel: ObservableObject {
     @Published private(set) var loadingProgress: String = ""
     @Published var errorMessage: String?
     @Published var selectedConversation: Conversation?
+    
+    /// When true, the user needs to sign in again (token expired/revoked)
+    @Published private(set) var requiresReauthentication = false
+    /// The email that needs re-authentication
+    @Published private(set) var reauthEmail: String?
 
     private var service: MailService?
     private var myEmail: String = ""
     private var timer: Timer?
     private var loadedThreads: [EmailThread] = []
     private var isConfigured = false
+    private var authFailureCount = 0
+    private let maxAuthFailures = 2  // Stop retrying after this many consecutive failures
 
     init() {
         NotificationCenter.default.addObserver(
@@ -27,8 +34,8 @@ final class InboxViewModel: ObservableObject {
         // CRITICAL: Check if this is a different account or same account
         let isSameAccount = isConfigured && self.myEmail.lowercased() == myEmail.lowercased()
         
-        // Skip ONLY if exact same account is already fully configured and loaded
-        if isSameAccount && !conversations.isEmpty {
+        // Skip ONLY if exact same account is already fully configured and loaded (and not requiring reauth)
+        if isSameAccount && !conversations.isEmpty && !requiresReauthentication {
             print("✓ Same account already configured: \(myEmail)")
             return
         }
@@ -48,6 +55,11 @@ final class InboxViewModel: ObservableObject {
         errorMessage = nil
         loadingProgress = ""
         isLoading = false
+        
+        // Reset auth state
+        requiresReauthentication = false
+        reauthEmail = nil
+        authFailureCount = 0
         
         // Reset notification manager
         NotificationManager.shared.resetForNewAccount()
@@ -77,6 +89,17 @@ final class InboxViewModel: ObservableObject {
         isConfigured = false
         myEmail = ""
         service = nil
+        requiresReauthentication = false
+        reauthEmail = nil
+        authFailureCount = 0
+    }
+    
+    /// Reset authentication state (call after user re-authenticates)
+    func resetAuthState() {
+        requiresReauthentication = false
+        reauthEmail = nil
+        authFailureCount = 0
+        errorMessage = nil
     }
 
     deinit {
@@ -92,7 +115,9 @@ final class InboxViewModel: ObservableObject {
     }
 
     func loadInbox() async {
-        guard !isLoading, let service = service else { return }
+        // Don't load if we're already loading, no service, or auth is broken
+        guard !isLoading, let service = service, !requiresReauthentication else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -123,11 +148,52 @@ final class InboxViewModel: ObservableObject {
             }
             
             loadingProgress = ""
+            // Reset failure count on success
+            authFailureCount = 0
+        } catch let error as MailServiceError where error.requiresReauthentication {
+            // Authentication failed - need user to sign in again
+            handleAuthenticationFailure(error: error)
         } catch {
+            // Other errors - show message but keep trying
+            authFailureCount += 1
             errorMessage = error.localizedDescription
+            
+            // If we've had too many failures, stop polling
+            if authFailureCount >= maxAuthFailures {
+                print("⚠️ Too many consecutive failures, stopping polling")
+                timer?.invalidate()
+                timer = nil
+            }
         }
         
         isLoading = false
+    }
+    
+    private func handleAuthenticationFailure(error: MailServiceError) {
+        print("🔐 Authentication failure detected: \(error.localizedDescription ?? "unknown")")
+        
+        // Extract email from error if available
+        switch error {
+        case .tokenExpired(let email), .refreshFailed(let email):
+            reauthEmail = email
+        default:
+            reauthEmail = myEmail
+        }
+        
+        // Stop polling - no point retrying with broken auth
+        timer?.invalidate()
+        timer = nil
+        
+        // Set state so UI can show re-auth prompt
+        requiresReauthentication = true
+        errorMessage = error.localizedDescription
+        
+        // Post notification for any listeners
+        NotificationCenter.default.post(
+            name: Notification.Name("AuthenticationRequired"),
+            object: nil,
+            userInfo: ["email": reauthEmail ?? myEmail]
+        )
     }
 
     private func processConversations(from threads: [EmailThread]) {

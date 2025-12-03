@@ -4,6 +4,8 @@ import Foundation
 
 enum MailServiceError: Error, LocalizedError {
     case authenticationRequired
+    case tokenExpired(email: String)      // Token is invalid/expired and needs re-auth
+    case refreshFailed(email: String)     // Refresh token failed - need full re-auth
     case invalidResponse
     case networkFailure
     case unsupported
@@ -13,14 +15,28 @@ enum MailServiceError: Error, LocalizedError {
         switch self {
         case .authenticationRequired:
             return "Authentication required."
+        case .tokenExpired(let email):
+            return "Your session for \(email) has expired. Please sign in again."
+        case .refreshFailed(let email):
+            return "Unable to refresh credentials for \(email). Please sign in again to continue."
         case .invalidResponse:
             return "Received invalid data from server."
         case .networkFailure:
-            return "Network request failed."
+            return "Network request failed. Please check your connection."
         case .unsupported:
             return "Operation unsupported by provider."
         case .custom(let message):
             return message
+        }
+    }
+    
+    /// Whether this error requires the user to re-authenticate
+    var requiresReauthentication: Bool {
+        switch self {
+        case .authenticationRequired, .tokenExpired, .refreshFailed:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -115,6 +131,14 @@ private func storeTokensForAccount(
         let expiry = Date().addingTimeInterval(TimeInterval(expires))
         UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: expiryKey(for: provider, email: email))
     }
+}
+
+/// Clear all tokens for an account (when they're invalid and refresh failed)
+private func clearTokensForAccount(provider: MailProvider, email: String) {
+    print("🗑️ Clearing invalid tokens for \(email)")
+    KeychainHelper.shared.delete(account: accessTokenKey(for: provider, email: email))
+    KeychainHelper.shared.delete(account: refreshTokenKey(for: provider, email: email))
+    UserDefaults.standard.removeObject(forKey: expiryKey(for: provider, email: email))
 }
 
 private func accessTokenExpiry(for provider: MailProvider, email: String) -> Date? {
@@ -470,11 +494,21 @@ final class GmailService: NSObject, MailService {
                     }
                     
                     print("📧 Gmail: Fetching inbox for \(account.emailAddress)")
-                    let token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                    
+                    // Get token - this will refresh if needed
+                    var token: String
+                    do {
+                        token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                    } catch {
+                        print("❌ Gmail: Token validation failed for \(account.emailAddress)")
+                        continuation.finish(throwing: error)
+                        return
+                    }
                     
                     var nextPageToken: String? = nil
                     let maxPages = 5
                     var pageCount = 0
+                    var hasRetried = false  // Only retry token refresh once
                     
                     repeat {
                         var components = URLComponents(
@@ -488,54 +522,80 @@ final class GmailService: NSObject, MailService {
                         var listRequest = URLRequest(url: components.url!)
                         listRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                         
-                        let listResponse: GmailThreadListResponse = try await URLSession.shared.data(
-                            for: listRequest)
-                        
-                        nextPageToken = listResponse.nextPageToken
-                        
-                        if let threads = listResponse.threads {
-                            // Fetch thread details concurrently but yield as each completes
-                            await withTaskGroup(of: EmailThread?.self) { group in
-                                for threadSummary in threads {
-                                    group.addTask {
-                                        do {
-                                            let detailURL = URL(
-                                                string:
-                                                    "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)"
-                                            )!
-                                            var detailRequest = URLRequest(url: detailURL)
-                                            detailRequest.setValue(
-                                                "Bearer \(token)", forHTTPHeaderField: "Authorization")
-                                            let threadDetail: GmailThreadDetail = try await URLSession.shared
-                                                .data(for: detailRequest)
-                                            
-                                            let messages = threadDetail.messages.map {
-                                                self.mapGmailMessage($0)
+                        do {
+                            let listResponse: GmailThreadListResponse = try await URLSession.shared.data(
+                                for: listRequest)
+                            
+                            nextPageToken = listResponse.nextPageToken
+                            
+                            if let threads = listResponse.threads {
+                                // Fetch thread details concurrently but yield as each completes
+                                await withTaskGroup(of: EmailThread?.self) { group in
+                                    for threadSummary in threads {
+                                        group.addTask {
+                                            do {
+                                                let detailURL = URL(
+                                                    string:
+                                                        "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadSummary.id)"
+                                                )!
+                                                var detailRequest = URLRequest(url: detailURL)
+                                                detailRequest.setValue(
+                                                    "Bearer \(token)", forHTTPHeaderField: "Authorization")
+                                                let threadDetail: GmailThreadDetail = try await URLSession.shared
+                                                    .data(for: detailRequest)
+                                                
+                                                let messages = threadDetail.messages.map {
+                                                    self.mapGmailMessage($0)
+                                                }
+                                                let subject = messages.first?.subject ?? "No Subject"
+                                                let participants = Array(
+                                                    Set(messages.map { $0.from } + messages.flatMap { $0.to }))
+                                                
+                                                return EmailThread(
+                                                    id: threadDetail.id, subject: subject, messages: messages,
+                                                    participants: participants)
+                                            } catch {
+                                                print("Failed to fetch thread details: \(error)")
+                                                return nil
                                             }
-                                            let subject = messages.first?.subject ?? "No Subject"
-                                            let participants = Array(
-                                                Set(messages.map { $0.from } + messages.flatMap { $0.to }))
-                                            
-                                            return EmailThread(
-                                                id: threadDetail.id, subject: subject, messages: messages,
-                                                participants: participants)
-                                        } catch {
-                                            print("Failed to fetch thread details: \(error)")
-                                            return nil
+                                        }
+                                    }
+                                    
+                                    // Yield each thread as it completes
+                                    for await thread in group {
+                                        if let thread = thread {
+                                            continuation.yield(thread)
                                         }
                                     }
                                 }
+                            }
+                            
+                            pageCount += 1
+                        } catch APIError.unauthorized {
+                            // Token was rejected by server - try to refresh once
+                            if !hasRetried {
+                                print("⚠️ Gmail: Token rejected by server, attempting refresh...")
+                                hasRetried = true
                                 
-                                // Yield each thread as it completes
-                                for await thread in group {
-                                    if let thread = thread {
-                                        continuation.yield(thread)
-                                    }
+                                // Force clear the token so ensureValidAccessToken will refresh
+                                clearTokensForAccount(provider: self.provider, email: account.emailAddress)
+                                
+                                do {
+                                    token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                                    print("✅ Gmail: Token refreshed, retrying request...")
+                                    continue  // Retry the current page
+                                } catch {
+                                    print("❌ Gmail: Token refresh failed, need re-authentication")
+                                    continuation.finish(throwing: MailServiceError.tokenExpired(email: account.emailAddress))
+                                    return
                                 }
+                            } else {
+                                // Already retried, give up
+                                print("❌ Gmail: Token still invalid after refresh for \(account.emailAddress)")
+                                continuation.finish(throwing: MailServiceError.tokenExpired(email: account.emailAddress))
+                                return
                             }
                         }
-                        
-                        pageCount += 1
                     } while nextPageToken != nil && pageCount < maxPages
                     
                     continuation.finish()
@@ -818,7 +878,16 @@ final class OutlookService: NSObject, MailService {
                     }
                     
                     print("📧 Outlook: Fetching inbox for \(account.emailAddress)")
-                    let token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                    
+                    // Get token - this will refresh if needed
+                    var token: String
+                    do {
+                        token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                    } catch {
+                        print("❌ Outlook: Token validation failed for \(account.emailAddress)")
+                        continuation.finish(throwing: error)
+                        return
+                    }
                     
                     var conversationGroups: [String: [OutlookMessage]] = [:]
                     var yieldedConversations: Set<String> = []
@@ -828,42 +897,69 @@ final class OutlookService: NSObject, MailService {
                     
                     let maxPages = 5
                     var pageCount = 0
+                    var hasRetried = false  // Only retry token refresh once
                     
                     while let link = nextLink, pageCount < maxPages {
                         var request = URLRequest(url: URL(string: link)!)
                         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                         
-                        let response: OutlookMessageListResponse = try await URLSession.shared.data(
-                            for: request)
-                        
-                        // Process messages and yield conversations as they become complete
-                        for message in response.value {
-                            let convId = message.conversationId ?? UUID().uuidString
+                        do {
+                            let response: OutlookMessageListResponse = try await URLSession.shared.data(
+                                for: request)
                             
-                            if conversationGroups[convId] == nil {
-                                conversationGroups[convId] = []
+                            // Process messages and yield conversations as they become complete
+                            for message in response.value {
+                                let convId = message.conversationId ?? UUID().uuidString
+                                
+                                if conversationGroups[convId] == nil {
+                                    conversationGroups[convId] = []
+                                }
+                                conversationGroups[convId]?.append(message)
+                                
+                                // Yield new conversations immediately
+                                if !yieldedConversations.contains(convId) {
+                                    let messages = conversationGroups[convId]!
+                                    let mappedMessages = messages.map { self.mapOutlookMessage($0) }
+                                    let subject = mappedMessages.first?.subject ?? "No Subject"
+                                    let participants = Array(
+                                        Set(mappedMessages.map { $0.from } + mappedMessages.flatMap { $0.to }))
+                                    
+                                    let thread = EmailThread(
+                                        id: convId, subject: subject, messages: mappedMessages,
+                                        participants: participants)
+                                    
+                                    continuation.yield(thread)
+                                    yieldedConversations.insert(convId)
+                                }
                             }
-                            conversationGroups[convId]?.append(message)
                             
-                            // Yield new conversations immediately
-                            if !yieldedConversations.contains(convId) {
-                                let messages = conversationGroups[convId]!
-                                let mappedMessages = messages.map { self.mapOutlookMessage($0) }
-                                let subject = mappedMessages.first?.subject ?? "No Subject"
-                                let participants = Array(
-                                    Set(mappedMessages.map { $0.from } + mappedMessages.flatMap { $0.to }))
+                            nextLink = response.nextLink
+                            pageCount += 1
+                        } catch APIError.unauthorized {
+                            // Token was rejected by server - try to refresh once
+                            if !hasRetried {
+                                print("⚠️ Outlook: Token rejected by server, attempting refresh...")
+                                hasRetried = true
                                 
-                                let thread = EmailThread(
-                                    id: convId, subject: subject, messages: mappedMessages,
-                                    participants: participants)
+                                // Force clear the token so ensureValidAccessToken will refresh
+                                clearTokensForAccount(provider: self.provider, email: account.emailAddress)
                                 
-                                continuation.yield(thread)
-                                yieldedConversations.insert(convId)
+                                do {
+                                    token = try await ensureValidAccessToken(for: self.provider, email: account.emailAddress, config: self.config)
+                                    print("✅ Outlook: Token refreshed, retrying request...")
+                                    continue  // Retry the current page
+                                } catch {
+                                    print("❌ Outlook: Token refresh failed, need re-authentication")
+                                    continuation.finish(throwing: MailServiceError.tokenExpired(email: account.emailAddress))
+                                    return
+                                }
+                            } else {
+                                // Already retried, give up
+                                print("❌ Outlook: Token still invalid after refresh for \(account.emailAddress)")
+                                continuation.finish(throwing: MailServiceError.tokenExpired(email: account.emailAddress))
+                                return
                             }
                         }
-                        
-                        nextLink = response.nextLink
-                        pageCount += 1
                     }
                     
                     continuation.finish()
@@ -1062,7 +1158,7 @@ extension MailService {
     }
 
     // Exchange a refresh token for a new access token
-    func refreshAccessToken(refreshToken: String, config: OAuthConfiguration) async throws
+    func refreshAccessToken(refreshToken: String, config: OAuthConfiguration, email: String? = nil) async throws
         -> TokenResponse
     {
         var request = URLRequest(url: URL(string: config.tokenEndpoint)!)
@@ -1080,11 +1176,22 @@ extension MailService {
         request.httpBody = comps.query?.data(using: .utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MailServiceError.networkFailure
+        }
+        
+        // Handle refresh token failures
+        if httpResponse.statusCode != 200 {
             if let errorText = String(data: data, encoding: .utf8) {
-                print("Refresh token exchange failed: \(errorText)")
+                print("⚠️ Refresh token exchange failed (\(httpResponse.statusCode)): \(errorText)")
             }
-            throw MailServiceError.custom("Refresh token exchange failed")
+            
+            // 400/401 typically means the refresh token is invalid/revoked
+            if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
+                throw MailServiceError.refreshFailed(email: email ?? "unknown")
+            }
+            
+            throw MailServiceError.networkFailure
         }
 
         let decoder = JSONDecoder()
@@ -1103,24 +1210,37 @@ extension MailService {
         if let expiry = accessTokenExpiry(for: provider, email: email), expiry > Date(),
             let access = KeychainHelper.shared.read(account: accessTokenKey(for: provider, email: email))
         {
-            print("✓ Valid token found for \(email)")
+            print("✓ Token found for \(email) (expires: \(expiry))")
             return access
         }
+        
+        print("⏰ Token expired or missing for \(email), attempting refresh...")
 
         // Try to refresh using account-specific refresh token
         guard let refresh = KeychainHelper.shared.read(account: refreshTokenKey(for: provider, email: email))
         else {
-            print("❌ No refresh token for \(email)")
-            throw MailServiceError.authenticationRequired
+            print("❌ No refresh token for \(email) - need re-authentication")
+            throw MailServiceError.tokenExpired(email: email)
         }
 
         print("🔄 Refreshing token for \(email)")
-        let newTokens = try await refreshAccessToken(refreshToken: refresh, config: config)
-        storeTokensForAccount(
-            provider: provider, email: email, accessToken: newTokens.accessToken,
-            refreshToken: newTokens.refreshToken ?? refresh, expiresIn: newTokens.expiresIn)
-
-        return newTokens.accessToken
+        do {
+            let newTokens = try await refreshAccessToken(refreshToken: refresh, config: config, email: email)
+            storeTokensForAccount(
+                provider: provider, email: email, accessToken: newTokens.accessToken,
+                refreshToken: newTokens.refreshToken ?? refresh, expiresIn: newTokens.expiresIn)
+            print("✅ Token refreshed successfully for \(email)")
+            return newTokens.accessToken
+        } catch let error as MailServiceError {
+            // Clear invalid tokens so we don't keep trying
+            clearTokensForAccount(provider: provider, email: email)
+            throw error
+        } catch {
+            // Clear tokens and wrap as refresh failed
+            clearTokensForAccount(provider: provider, email: email)
+            print("❌ Token refresh failed for \(email): \(error)")
+            throw MailServiceError.refreshFailed(email: email)
+        }
     }
     
     // Legacy function - for backward compatibility
@@ -1213,6 +1333,13 @@ enum MockMailData {
     }
 }
 
+/// Custom error to signal a 401 that might be recoverable with token refresh
+enum APIError: Error {
+    case unauthorized  // 401 - might be recoverable
+    case forbidden     // 403 - not recoverable
+    case other(Int)
+}
+
 extension URLSession {
     fileprivate func data<T: Decodable>(for request: URLRequest) async throws -> T {
         let (data, response) = try await self.data(for: request)
@@ -1225,7 +1352,10 @@ extension URLSession {
                 print("Request failed: \(httpResponse.statusCode), body: \(errorText)")
             }
             if httpResponse.statusCode == 401 {
-                throw MailServiceError.authenticationRequired
+                throw APIError.unauthorized
+            }
+            if httpResponse.statusCode == 403 {
+                throw APIError.forbidden
             }
             throw MailServiceError.custom("Request failed with status \(httpResponse.statusCode)")
         }
