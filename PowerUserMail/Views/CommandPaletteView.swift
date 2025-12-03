@@ -22,17 +22,44 @@ struct CommandPaletteView: View {
         filterActions(query: searchText, actions: actions)
     }
     
-    // Filter conversations/people based on search
+    // Filter conversations/people based on search, deduplicated by email
     private var filteredPeople: [Conversation] {
         guard !searchText.isEmpty else { return [] }
         let query = searchText.lowercased()
-        return conversations.filter { conversation in
+        
+        let matching = conversations.filter { conversation in
             conversation.person.lowercased().contains(query) ||
             conversation.messages.contains { msg in
                 msg.from.lowercased().contains(query) ||
                 msg.to.joined(separator: " ").lowercased().contains(query)
             }
-        }.prefix(5).map { $0 } // Limit to 5 results
+        }
+        
+        // Deduplicate by normalized email address
+        var seenEmails = Set<String>()
+        var unique: [Conversation] = []
+        
+        for conversation in matching {
+            let normalizedEmail = extractEmail(from: conversation.person).lowercased()
+            if !seenEmails.contains(normalizedEmail) {
+                seenEmails.insert(normalizedEmail)
+                unique.append(conversation)
+            }
+        }
+        
+        return Array(unique.prefix(5))
+    }
+    
+    /// Extract clean email from formats like "Name <email@example.com>" or just "email@example.com"
+    private func extractEmail(from string: String) -> String {
+        // Handle format: "Name <email@example.com>"
+        if let start = string.firstIndex(of: "<"),
+           let end = string.firstIndex(of: ">"),
+           start < end {
+            return String(string[string.index(after: start)..<end])
+        }
+        // Handle format: "email@example.com" or just return as-is
+        return string.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     // Pure function for filtering - no side effects
