@@ -8,18 +8,69 @@ struct ChatView: View {
 
     @State private var replyText = ""
     @State private var isSending = false
-    @State private var localMessages: [Email] = [] // Optimistic messages before reload
+    @State private var localMessages: [Email] = []
     @FocusState private var isReplyFocused: Bool
     
-    // Combined messages: original + locally sent (not yet synced)
     private var allMessages: [Email] {
         let existingIds = Set(conversation.messages.map { $0.id })
         let newLocals = localMessages.filter { !existingIds.contains($0.id) }
         return conversation.messages + newLocals
     }
+    
+    /// Extract display name from conversation person
+    private var displayName: String {
+        let person = conversation.person
+        
+        if person.hasPrefix("Topic:") {
+            return String(person.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+        }
+        
+        if let nameEnd = person.firstIndex(of: "<") {
+            let name = String(person[..<nameEnd]).trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                return name
+            }
+        }
+        
+        if let atIndex = person.firstIndex(of: "@") {
+            let localPart = String(person[..<atIndex])
+            let formatted = localPart
+                .replacingOccurrences(of: ".", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .split(separator: " ")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+                .joined(separator: " ")
+            return formatted
+        }
+        
+        return person
+    }
+    
+    /// Extract email from conversation person
+    private var personEmail: String {
+        let person = conversation.person
+        
+        // Handle "Name <email@example.com>" format
+        if let start = person.firstIndex(of: "<"),
+           let end = person.firstIndex(of: ">") {
+            return String(person[person.index(after: start)..<end])
+        }
+        
+        // If it's already an email
+        if person.contains("@") {
+            return person
+        }
+        
+        return ""
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            // Chat Header (like demo)
+            chatHeader
+            
+            Divider()
+            
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -31,7 +82,6 @@ struct ChatView: View {
                     .padding()
                 }
                 .onChange(of: conversation) { _ in
-                    // Clear local messages when conversation updates (they're now in the real data)
                     localMessages.removeAll { msg in
                         conversation.messages.contains { $0.id == msg.id }
                     }
@@ -47,30 +97,54 @@ struct ChatView: View {
 
             Divider()
 
-            // Inline Reply Area
-            HStack(alignment: .bottom, spacing: 12) {
+            // Reply Area (demo style)
+            HStack(alignment: .center, spacing: 12) {
                 MessageInputField(
                     text: $replyText,
                     placeholder: "Type a message...",
                     onSend: sendReply
                 )
-                .frame(minHeight: 36, maxHeight: 120)
+                .frame(minHeight: 40, maxHeight: 120)
 
                 Button(action: sendReply) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 16))
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.system(size: 14))
                         .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(replyText.isEmpty ? Color.gray : Color.accentColor)
+                        .frame(width: 40, height: 40)
+                        .background(replyText.isEmpty ? Color.gray.opacity(0.5) : Color.accentColor)
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(replyText.isEmpty || isSending)
             }
-            .padding()
-            .background(.ultraThinMaterial)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .navigationTitle(conversation.person)
+        .navigationTitle("")
+        .toolbar(.hidden, for: .automatic)
+    }
+    
+    // MARK: - Chat Header (like demo)
+    private var chatHeader: some View {
+        HStack(spacing: 12) {
+            SenderProfilePicture(email: conversation.person, size: 44)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                
+                if !personEmail.isEmpty {
+                    Text(personEmail)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {

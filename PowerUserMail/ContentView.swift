@@ -153,57 +153,22 @@ struct ContentView: View {
                 myEmail: myEmail, 
                 selectedConversation: $selectedConversation,
                 onReauthenticate: {
-                    // Trigger re-authentication for the current provider
                     if let account = accountViewModel.selectedAccount {
                         Task {
-                            // Reset the inbox state first
                             inboxViewModel.resetAuthState()
-                            // Re-authenticate (this will show the OAuth flow)
                             await accountViewModel.authenticate(provider: account.provider)
-                            // After successful auth, reload inbox
                             if accountViewModel.selectedAccount != nil {
                                 await inboxViewModel.loadInbox()
                             }
                         }
                     }
+                },
+                onOpenCommandPalette: {
+                    toggleCommandPalette()
                 }
             )
-            .navigationSplitViewColumnWidth(min: 280, ideal: 320)
-            .navigationTitle("Chats")
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button {
-                        isShowingAccountSwitcher = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            ProfilePictureView(account: accountViewModel.selectedAccount, size: 28)
-                            
-                            if let account = accountViewModel.selectedAccount {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(account.displayName.isEmpty ? "Account" : account.displayName)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .lineLimit(1)
-                                    Text(account.emailAddress)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .help("Switch Account")
-                }
-                
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button(action: openCompose) {
-                        Label("New Email", systemImage: "square.and.pencil")
-                    }
-                    Button(action: toggleCommandPalette) {
-                        Label("Command Palette", systemImage: "command")
-                    }
-                }
-            }
+            .navigationSplitViewColumnWidth(min: 300, ideal: 340)
+            .toolbar(.hidden, for: .automatic)
         } detail: {
             if let conversation = selectedConversation,
                 let account = accountViewModel.selectedAccount
@@ -215,6 +180,7 @@ struct ContentView: View {
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right")
             }
         }
+        .navigationTitle("PowerUserMail")
     }
 
     private func openCompose() {

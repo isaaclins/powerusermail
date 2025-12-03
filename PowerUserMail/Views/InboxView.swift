@@ -1,18 +1,16 @@
 import SwiftUI
 
-// MARK: - Inbox Filter
+// MARK: - Inbox Filter (Demo has only 3 filters)
 enum InboxFilter: String, CaseIterable {
     case unread = "Unread"
     case all = "All"
     case archived = "Archived"
-    case pinned = "Pinned"
     
     var shortcutNumber: Int {
         switch self {
         case .unread: return 1
         case .all: return 2
         case .archived: return 3
-        case .pinned: return 4
         }
     }
     
@@ -21,7 +19,6 @@ enum InboxFilter: String, CaseIterable {
         case .all: return "tray"
         case .unread: return "envelope.badge"
         case .archived: return "archivebox"
-        case .pinned: return "pin"
         }
     }
 }
@@ -29,66 +26,130 @@ enum InboxFilter: String, CaseIterable {
 struct InboxView: View {
     @ObservedObject var viewModel: InboxViewModel
     @Binding var selectedConversation: Conversation?
-    @State private var activeFilter: InboxFilter = .all
+    @State private var activeFilter: InboxFilter = .unread  // Demo shows Unread selected by default
+    @State private var searchText = ""
     
     let service: MailService
     let myEmail: String
-    var onReauthenticate: (() -> Void)?  // Callback to trigger re-authentication
+    var onReauthenticate: (() -> Void)?
+    var onOpenCommandPalette: (() -> Void)?
 
-    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>, onReauthenticate: (() -> Void)? = nil) {
+    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>, onReauthenticate: (() -> Void)? = nil, onOpenCommandPalette: (() -> Void)? = nil) {
         self.viewModel = viewModel
         self.service = service
         self.myEmail = myEmail
         _selectedConversation = selectedConversation
         self.onReauthenticate = onReauthenticate
-        // Don't configure here - do it in onAppear to ensure proper lifecycle
+        self.onOpenCommandPalette = onOpenCommandPalette
     }
     
-    private var filteredConversations: [Conversation] {
-        switch activeFilter {
-        case .all:
-            return viewModel.conversations
-        case .unread:
-            return viewModel.conversations.filter { $0.hasUnread }
-        case .archived:
-            // TODO: Implement archived state tracking
-            return []
-        case .pinned:
-            return viewModel.conversations.filter { 
-                ConversationStateStore.shared.isPinned(conversationId: $0.id)
+    /// Pinned conversations - always shown at top
+    private var pinnedConversations: [Conversation] {
+        var conversations = viewModel.conversations.filter {
+            ConversationStateStore.shared.isPinned(conversationId: $0.id)
+        }
+        
+        // Apply search filter to pinned too
+        if !searchText.isEmpty {
+            conversations = conversations.filter { conv in
+                conv.person.localizedCaseInsensitiveContains(searchText) ||
+                conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
             }
         }
+        
+        return conversations
+    }
+    
+    /// Regular (non-pinned) conversations based on current filter
+    private var filteredConversations: [Conversation] {
+        var conversations: [Conversation]
+        
+        switch activeFilter {
+        case .all:
+            conversations = viewModel.conversations
+        case .unread:
+            conversations = viewModel.conversations.filter { $0.hasUnread }
+        case .archived:
+            // TODO: Implement archived state tracking
+            conversations = []
+        }
+        
+        // Exclude pinned conversations (they're shown separately)
+        conversations = conversations.filter {
+            !ConversationStateStore.shared.isPinned(conversationId: $0.id)
+        }
+        
+        // Apply search filter
+        if !searchText.isEmpty {
+            conversations = conversations.filter { conv in
+                conv.person.localizedCaseInsensitiveContains(searchText) ||
+                conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
+            }
+        }
+        
+        return conversations
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            // Search bar (like demo)
+            searchBar
+            
             // Filter tabs
             filterBar
             
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 0) {
+                    // PINNED SECTION - Always visible at top
+                    if !pinnedConversations.isEmpty {
+                        ForEach(pinnedConversations) { conversation in
+                            ConversationRow(
+                                conversation: conversation,
+                                isSelected: selectedConversation?.id == conversation.id,
+                                displayName: displayName(for: conversation.person),
+                                showPinIcon: true
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    viewModel.select(conversation: conversation)
+                                    selectedConversation = conversation
+                                    ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+                                }
+                            }
+                        }
+                        
+                        // Separator line
+                        HStack {
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                    }
+                    
+                    // REGULAR CONVERSATIONS
                     ForEach(filteredConversations) { conversation in
                         ConversationRow(
                             conversation: conversation,
                             isSelected: selectedConversation?.id == conversation.id,
-                            displayName: displayName(for: conversation.person)
+                            displayName: displayName(for: conversation.person),
+                            showPinIcon: false
                         )
                         .contentShape(Rectangle())
                         .onTapGesture {
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 viewModel.select(conversation: conversation)
                                 selectedConversation = conversation
-                                // Mark as read when opened
                                 ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
                             }
                         }
                     }
                 }
             }
-            .padding(.vertical, 4)
         }
         .safeAreaInset(edge: .bottom) {
-            // Show loading progress at bottom while loading
             if viewModel.isLoading && !viewModel.conversations.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -117,7 +178,6 @@ struct InboxView: View {
                         .foregroundStyle(.secondary)
                 }
             } else if viewModel.requiresReauthentication {
-                // Special UI for authentication errors
                 authenticationRequiredView
             } else if let error = viewModel.errorMessage, viewModel.conversations.isEmpty {
                 VStack(spacing: 12) {
@@ -160,23 +220,51 @@ struct InboxView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter4"))) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .pinned }
-        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) { _ in
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
         .onAppear {
-            // Ensure viewModel is configured for this account
             viewModel.configure(service: service, myEmail: myEmail)
         }
+    }
+    
+    // MARK: - Search Bar (like demo)
+    private var searchBar: some View {
+        Button {
+            onOpenCommandPalette?()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                
+                Text("Search emails...")
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Text("⌘K")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
     
     // MARK: - Authentication Required View
     private var authenticationRequiredView: some View {
         VStack(spacing: 16) {
-            // Icon with animation
             Image(systemName: "key.horizontal")
                 .font(.system(size: 40))
                 .foregroundStyle(.orange)
@@ -228,36 +316,32 @@ struct InboxView: View {
         .shadow(color: .black.opacity(0.2), radius: 24)
     }
     
-    // MARK: - Filter Bar
+    // MARK: - Filter Bar (demo style)
     private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(InboxFilter.allCases, id: \.self) { filter in
-                    FilterPill(
-                        filter: filter,
-                        isActive: activeFilter == filter,
-                        action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                activeFilter = filter
-                            }
+        HStack(spacing: 8) {
+            ForEach(InboxFilter.allCases, id: \.self) { filter in
+                FilterPill(
+                    filter: filter,
+                    isActive: activeFilter == filter,
+                    action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            activeFilter = filter
                         }
-                    )
-                }
+                    }
+                )
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            Spacer()
         }
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
     
     /// Extract a cleaner display name from email addresses
     private func displayName(for person: String) -> String {
-        // Handle "Topic: Subject" format
         if person.hasPrefix("Topic:") {
             return person
         }
         
-        // Handle "Name <email@example.com>" format
         if let nameEnd = person.firstIndex(of: "<") {
             let name = String(person[..<nameEnd]).trimmingCharacters(in: .whitespaces)
             if !name.isEmpty {
@@ -265,10 +349,8 @@ struct InboxView: View {
             }
         }
         
-        // Handle plain email - extract name before @
         if let atIndex = person.firstIndex(of: "@") {
             let localPart = String(person[..<atIndex])
-            // Convert "john.doe" or "john_doe" to "John Doe"
             let formatted = localPart
                 .replacingOccurrences(of: ".", with: " ")
                 .replacingOccurrences(of: "_", with: " ")
@@ -282,7 +364,7 @@ struct InboxView: View {
     }
 }
 
-// MARK: - Filter Pill
+// MARK: - Filter Pill (demo style - simpler)
 struct FilterPill: View {
     let filter: InboxFilter
     let isActive: Bool
@@ -293,26 +375,18 @@ struct FilterPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                // Keyboard shortcut indicator (compact)
                 Text("⌘\(filter.shortcutNumber)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(isActive ? .white.opacity(0.8) : .secondary)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(isActive ? .white.opacity(0.9) : .secondary)
                 
                 Text(filter.rawValue)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isActive ? Color.accentColor : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(
-                        isActive ? Color.clear : Color.secondary.opacity(isHovered ? 0.5 : 0.3),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isActive ? Color.accentColor : Color.secondary.opacity(isHovered ? 0.15 : 0.1))
             )
             .foregroundStyle(isActive ? .white : .primary)
         }
@@ -326,11 +400,12 @@ struct FilterPill: View {
     }
 }
 
-// MARK: - Conversation Row
+// MARK: - Conversation Row (demo style)
 struct ConversationRow: View {
     let conversation: Conversation
     let isSelected: Bool
     let displayName: String
+    var showPinIcon: Bool = false
     
     @State private var isHovered = false
     
@@ -342,93 +417,86 @@ struct ConversationRow: View {
         conversation.hasUnread
     }
     
-    private var isPinned: Bool {
-        ConversationStateStore.shared.isPinned(conversationId: conversation.id)
-    }
-    
-    private var isMuted: Bool {
-        ConversationStateStore.shared.isMuted(conversationId: conversation.id)
-    }
-    
     var body: some View {
         HStack(spacing: 12) {
-            // Unread indicator dot
-            Circle()
-                .fill(hasUnread ? Color.accentColor : Color.clear)
-                .frame(width: 8, height: 8)
-            
-            // Profile picture or topic icon
+            // Profile picture (larger like demo ~44px)
             if isTopic {
                 ZStack {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [.blue.opacity(0.8), .blue],
+                                colors: [.purple.opacity(0.8), .purple],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                     Image(systemName: "number")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(.white)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
             } else {
-                SenderProfilePicture(email: conversation.person, size: 36)
+                SenderProfilePicture(email: conversation.person, size: 44)
             }
             
             // Content
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(displayName)
-                        .font(.system(size: 14, weight: hasUnread ? .semibold : .regular))
-                        .foregroundStyle(hasUnread ? Color.primary : Color.primary.opacity(0.9))
+                        .font(.system(size: 15, weight: hasUnread ? .semibold : .regular))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     
-                    if isPinned {
+                    // Pin icon for pinned conversations
+                    if showPinIcon {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.orange)
-                    }
-                    
-                    if isMuted {
-                        Image(systemName: "bell.slash.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
                     }
                     
                     Spacer()
                     
                     if let last = conversation.latestMessage {
                         Text(last.receivedAt.relativeTimeString())
-                            .font(.system(size: 12, weight: hasUnread ? .medium : .regular))
+                            .font(.system(size: 12))
                             .foregroundStyle(hasUnread ? Color.accentColor : Color.secondary)
                     }
                 }
                 
-                if let last = conversation.latestMessage {
-                    Text(last.subject)
-                        .font(.system(size: 13, weight: hasUnread ? .medium : .regular))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack {
+                    if let last = conversation.latestMessage {
+                        Text(last.preview.isEmpty ? last.subject : last.preview)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer()
+                    
+                    // Unread indicator on the RIGHT (like demo)
+                    if hasUnread {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 8, height: 8)
+                    }
                 }
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(backgroundColor)
         )
         .padding(.horizontal, 8)
+        .padding(.vertical, 2)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.1)) {
                 isHovered = hovering
             }
         }
         .contextMenu {
-            // Section 1: Status actions
             Button {
                 ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
             } label: {
@@ -458,7 +526,6 @@ struct ConversationRow: View {
             
             Divider()
             
-            // Section 2: Thread organization
             if isTopic {
                 Button {
                     PromotedThreadStore.shared.demote(threadId: conversation.id)
@@ -467,7 +534,6 @@ struct ConversationRow: View {
                 }
             } else {
                 Button {
-                    // Promote all messages in this conversation
                     for message in conversation.messages {
                         PromotedThreadStore.shared.promote(threadId: message.threadId)
                     }
@@ -478,7 +544,6 @@ struct ConversationRow: View {
             
             Divider()
             
-            // Section 3: Destructive actions
             Button {
                 // TODO: Implement archive via API
             } label: {
