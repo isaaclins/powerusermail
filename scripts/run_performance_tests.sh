@@ -14,7 +14,52 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
+
+# Parse arguments
+QUICK_MODE=false
+SKIP_BUILD=false
+UNIT_ONLY=false
+UI_ONLY=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -q|--quick)
+            QUICK_MODE=true
+            shift
+            ;;
+        -s|--skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        -u|--unit-only)
+            UNIT_ONLY=true
+            shift
+            ;;
+        -i|--ui-only)
+            UI_ONLY=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [options]"
+            echo ""
+            echo "Options:"
+            echo "  -q, --quick       Quick mode: skip clean, use cached build"
+            echo "  -s, --skip-build  Skip building, run tests only"
+            echo "  -u, --unit-only   Run only unit tests"
+            echo "  -i, --ui-only     Run only UI tests"
+            echo "  -h, --help        Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
 # Configuration
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,21 +70,33 @@ LATEST_REPORT="${REPORT_DIR}/PERFORMANCE_REPORT.md"
 JSON_REPORT="${REPORT_DIR}/performance_data.json"
 TARGET_MS=50
 
+# Track test counts
+TOTAL_UNIT_TESTS=20
+TOTAL_UI_TESTS=13
+CURRENT_TEST=0
+
 echo -e "${BLUE}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     PowerUserMail Performance Test Suite                 ║${NC}"
 echo -e "${BLUE}║     Target: Sub-${TARGET_MS}ms for all interactions              ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
+echo -e "${CYAN}Expected tests: ${TOTAL_UNIT_TESTS} unit + ${TOTAL_UI_TESTS} UI = $((TOTAL_UNIT_TESTS + TOTAL_UI_TESTS)) total${NC}"
+echo ""
 
 # Create report directory
 mkdir -p "${REPORT_DIR}"
 
-# Function to run tests and capture output (without rebuilding)
+# Function to run tests and capture output with live progress
 run_tests() {
     local test_type=$1
     local output_file="${REPORT_DIR}/test_output_${test_type}.txt"
     
     echo -e "${YELLOW}Running ${test_type} tests...${NC}" >&2
+    echo "" >&2
+    
+    local test_count=0
+    local current_test=""
+    local start_time=$(date +%s)
     
     if [ "$test_type" == "unit" ]; then
         xcodebuild test-without-building \
@@ -48,7 +105,31 @@ run_tests() {
             -destination 'platform=macOS' \
             -only-testing:PowerUserMailTests/PerformanceTests \
             -only-testing:PowerUserMailTests/LargeScalePerformanceTests \
-            2>&1 | tee "${output_file}" >&2 || true
+            2>&1 | while IFS= read -r line; do
+                echo "$line" >> "${output_file}"
+                
+                # Detect test start
+                if [[ "$line" =~ "Test case '".*"' started" ]]; then
+                    current_test=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    echo -e "  ${CYAN}▶${NC} Running: ${BOLD}${current_test}${NC}" >&2
+                fi
+                
+                # Detect test pass
+                if [[ "$line" =~ "' passed" ]]; then
+                    test_count=$((test_count + 1))
+                    test_name=$(echo "$line" | sed -n "s/.*'\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1/p')
+                    echo -e "  ${GREEN}✓${NC} ${test_name} ${CYAN}(${time}s)${NC}" >&2
+                fi
+                
+                # Detect test fail
+                if [[ "$line" =~ "' failed" ]]; then
+                    test_count=$((test_count + 1))
+                    test_name=$(echo "$line" | sed -n "s/.*'\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1/p')
+                    echo -e "  ${RED}✗${NC} ${test_name} ${CYAN}(${time}s)${NC}" >&2
+                fi
+            done || true
     elif [ "$test_type" == "ui" ]; then
         xcodebuild test-without-building \
             -project "${PROJECT_DIR}/PowerUserMail.xcodeproj" \
@@ -56,8 +137,48 @@ run_tests() {
             -destination 'platform=macOS' \
             -only-testing:PowerUserMailUITests/PerformanceUITests \
             -only-testing:PowerUserMailUITests/PerformanceStressTests \
-            2>&1 | tee "${output_file}" >&2 || true
+            2>&1 | while IFS= read -r line; do
+                echo "$line" >> "${output_file}"
+                
+                # Detect test start
+                if [[ "$line" =~ "Test case '".*"' started" ]]; then
+                    current_test=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    echo -e "  ${CYAN}▶${NC} Running: ${BOLD}${current_test}${NC}" >&2
+                fi
+                
+                # Detect test pass
+                if [[ "$line" =~ "' passed" ]]; then
+                    test_count=$((test_count + 1))
+                    test_name=$(echo "$line" | sed -n "s/.*'\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1/p')
+                    echo -e "  ${GREEN}✓${NC} ${test_name} ${CYAN}(${time}s)${NC}" >&2
+                fi
+                
+                # Detect test fail
+                if [[ "$line" =~ "' failed" ]]; then
+                    test_count=$((test_count + 1))
+                    test_name=$(echo "$line" | sed -n "s/.*'\([^']*\)'.*/\1/p" | sed 's/()//' | sed 's/.*\.//')
+                    time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1/p')
+                    echo -e "  ${RED}✗${NC} ${test_name} ${CYAN}(${time}s)${NC}" >&2
+                fi
+                
+                # Show performance measurement when detected
+                if [[ "$line" =~ "measured".*"average:" ]]; then
+                    avg=$(echo "$line" | sed -n 's/.*average: \([0-9.]*\).*/\1/p')
+                    if [ -n "$avg" ]; then
+                        avg_ms=$(echo "$avg * 1000" | bc | cut -d'.' -f1)
+                        echo -e "    ${MAGENTA}📊 Measured: ${avg_ms}ms${NC}" >&2
+                    fi
+                fi
+            done || true
     fi
+    
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    # Capitalize first letter (compatible with older bash)
+    local test_type_cap="$(echo "${test_type:0:1}" | tr '[:lower:]' '[:upper:]')${test_type:1}"
+    echo "" >&2
+    echo -e "${GREEN}${test_type_cap} tests completed in ${duration}s${NC}" >&2
     
     # Return just the output file path
     echo "${output_file}"
@@ -128,7 +249,9 @@ format_measured() {
     if [ -z "$ms" ]; then
         echo "-"
     elif [ "$ms" -ge 1000 ]; then
-        echo "$(echo "$ms" | awk '{printf "%.2f", $1 / 1000}')s"
+        # Convert ms to seconds with 2 decimal places
+        local secs=$(echo "scale=2; $ms / 1000" | bc)
+        echo "${secs}s"
     else
         echo "${ms}ms"
     fi
@@ -265,18 +388,22 @@ HEADER
     if [ -f "$unit_output" ]; then
         echo "| Test | Time | Status |" >> "${REPORT_FILE}"
         echo "|------|------|--------|" >> "${REPORT_FILE}"
-        # Extract test names properly - look for patterns like 'PerformanceTests.testXxx()'
-        grep -E "Test case '.*\(\)' passed" "$unit_output" 2>/dev/null | while read -r line; do
-            # Extract test name between single quotes, e.g., 'PerformanceTests.testXxx()'
+        # Use process substitution to avoid subshell issue
+        while IFS= read -r line; do
             test_name=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//')
             time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1s/p')
-            echo "| ${test_name} | ${time} | ✅ |" >> "${REPORT_FILE}"
-        done
-        grep -E "Test case '.*\(\)' failed" "$unit_output" 2>/dev/null | while read -r line; do
+            if [ -n "$test_name" ] && [ -n "$time" ]; then
+                echo "| ${test_name} | ${time} | ✅ |" >> "${REPORT_FILE}"
+            fi
+        done < <(grep -E "Test case '.*\(\)' passed" "$unit_output" 2>/dev/null)
+        
+        while IFS= read -r line; do
             test_name=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//')
             time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1s/p')
-            echo "| ${test_name} | ${time} | ❌ |" >> "${REPORT_FILE}"
-        done
+            if [ -n "$test_name" ] && [ -n "$time" ]; then
+                echo "| ${test_name} | ${time} | ❌ |" >> "${REPORT_FILE}"
+            fi
+        done < <(grep -E "Test case '.*\(\)' failed" "$unit_output" 2>/dev/null)
     else
         echo "No unit test output file found." >> "${REPORT_FILE}"
     fi
@@ -289,16 +416,21 @@ HEADER
     if [ -f "$ui_output" ]; then
         echo "| Test | Time | Status |" >> "${REPORT_FILE}"
         echo "|------|------|--------|" >> "${REPORT_FILE}"
-        grep -E "Test case '.*\(\)' passed" "$ui_output" 2>/dev/null | while read -r line; do
+        while IFS= read -r line; do
             test_name=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//')
             time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1s/p')
-            echo "| ${test_name} | ${time} | ✅ |" >> "${REPORT_FILE}"
-        done
-        grep -E "Test case '.*\(\)' failed" "$ui_output" 2>/dev/null | while read -r line; do
+            if [ -n "$test_name" ] && [ -n "$time" ]; then
+                echo "| ${test_name} | ${time} | ✅ |" >> "${REPORT_FILE}"
+            fi
+        done < <(grep -E "Test case '.*\(\)' passed" "$ui_output" 2>/dev/null)
+        
+        while IFS= read -r line; do
             test_name=$(echo "$line" | sed -n "s/.*Test case '\([^']*\)'.*/\1/p" | sed 's/()//')
             time=$(echo "$line" | sed -n 's/.* (\([0-9.]*\) seconds)/\1s/p')
-            echo "| ${test_name} | ${time} | ❌ |" >> "${REPORT_FILE}"
-        done
+            if [ -n "$test_name" ] && [ -n "$time" ]; then
+                echo "| ${test_name} | ${time} | ❌ |" >> "${REPORT_FILE}"
+            fi
+        done < <(grep -E "Test case '.*\(\)' failed" "$ui_output" 2>/dev/null)
     else
         echo "No UI test output file found." >> "${REPORT_FILE}"
     fi
@@ -374,39 +506,102 @@ clear_quarantine_and_sign() {
 }
 
 # Main execution
-echo -e "${BLUE}Step 1/6: Cleaning DerivedData...${NC}"
-clean_derived_data
+START_TIME=$(date +%s)
 
-echo ""
-echo -e "${BLUE}Step 2/6: Building project and all test targets...${NC}"
-# Build everything including test targets with proper code signing
-xcodebuild build-for-testing \
-    -project "${PROJECT_DIR}/PowerUserMail.xcodeproj" \
-    -scheme PowerUserMail \
-    -configuration Debug \
-    -destination 'platform=macOS' \
-    CODE_SIGN_STYLE=Automatic \
-    2>&1 | grep -E "(error:|warning:|BUILD|Signing)" || true
+# Show mode
+if [ "$QUICK_MODE" = true ]; then
+    echo -e "${MAGENTA}🚀 QUICK MODE: Skipping clean, using cached build${NC}"
+    echo ""
+fi
 
-echo ""
-echo -e "${BLUE}Step 3/6: Signing apps for local testing...${NC}"
+STEP=1
+TOTAL_STEPS=6
+
+# Adjust steps based on options
+if [ "$QUICK_MODE" = true ] || [ "$SKIP_BUILD" = true ]; then
+    TOTAL_STEPS=$((TOTAL_STEPS - 2))
+fi
+if [ "$UNIT_ONLY" = true ] || [ "$UI_ONLY" = true ]; then
+    TOTAL_STEPS=$((TOTAL_STEPS - 1))
+fi
+
+# Step 1: Clean (skip in quick mode)
+if [ "$QUICK_MODE" != true ] && [ "$SKIP_BUILD" != true ]; then
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Cleaning DerivedData...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    clean_derived_data
+    STEP=$((STEP + 1))
+    echo ""
+fi
+
+# Step 2: Build (skip in quick mode or skip-build)
+if [ "$QUICK_MODE" != true ] && [ "$SKIP_BUILD" != true ]; then
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Building project and test targets...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}This may take 1-2 minutes...${NC}"
+    xcodebuild build-for-testing \
+        -project "${PROJECT_DIR}/PowerUserMail.xcodeproj" \
+        -scheme PowerUserMail \
+        -configuration Debug \
+        -destination 'platform=macOS' \
+        CODE_SIGN_STYLE=Automatic \
+        2>&1 | grep -E "(error:|warning:|BUILD|Signing|Compiling|Linking)" || true
+    echo -e "${GREEN}Build complete${NC}"
+    STEP=$((STEP + 1))
+    echo ""
+fi
+
+# Step 3: Prepare environment
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Preparing test environment...${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 clear_quarantine_and_sign
+STEP=$((STEP + 1))
 
-echo ""
-echo -e "${BLUE}Step 4/6: Running unit performance tests...${NC}"
-UNIT_OUTPUT=$(run_tests "unit")
+# Step 4: Unit tests
+if [ "$UI_ONLY" != true ]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Running unit tests (${TOTAL_UNIT_TESTS} tests)...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Expected time: ~30 seconds${NC}"
+    UNIT_OUTPUT=$(run_tests "unit")
+    STEP=$((STEP + 1))
+else
+    UNIT_OUTPUT=""
+fi
 
-echo ""
-echo -e "${BLUE}Step 5/6: Running UI performance tests...${NC}"
-UI_OUTPUT=$(run_tests "ui")
+# Step 5: UI tests
+if [ "$UNIT_ONLY" != true ]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Running UI tests (${TOTAL_UI_TESTS} tests)...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Expected time: ~5-7 minutes (includes 10x measure iterations)${NC}"
+    UI_OUTPUT=$(run_tests "ui")
+    STEP=$((STEP + 1))
+else
+    UI_OUTPUT=""
+fi
 
+# Step 6: Generate report
 echo ""
-echo -e "${BLUE}Step 6/6: Generating report...${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Step ${STEP}/${TOTAL_STEPS}: Generating report...${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 generate_report "$UNIT_OUTPUT" "$UI_OUTPUT"
+
+END_TIME=$(date +%s)
+TOTAL_TIME=$((END_TIME - START_TIME))
+MINUTES=$((TOTAL_TIME / 60))
+SECONDS=$((TOTAL_TIME % 60))
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║     Performance testing complete!                        ║${NC}"
+printf "${GREEN}║     Total time: %dm %02ds                                   ║${NC}\n" $MINUTES $SECONDS
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "View the report: ${BLUE}${LATEST_REPORT}${NC}"

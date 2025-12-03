@@ -2,16 +2,14 @@
 
 > **Target:** Sub-50ms for all user interactions (2x faster than Superhuman's 100ms)
 
-Generated: 2025-12-03T11:12:03Z
+Generated: 2025-12-03T13:40:00Z
 
 ## 📊 Executive Summary
 
 | Test Suite | Status | Passed | Failed |
 |------------|--------|--------|--------|
-| Unit Tests | ✅ Passed | 20 | 0
-0 |
-| UI Tests | ✅ Passed | 30 | 0
-0 |
+| Unit Tests | ✅ Passed | 20 | 0 |
+| UI Tests | ✅ Passed | 30 | 0 |
 
 ## 📋 Performance Summary
 
@@ -22,68 +20,55 @@ Generated: 2025-12-03T11:12:03Z
 | Command Palette Search | 50ms | 295ms | ❌ |
 | Command Palette Navigation | 50ms | 603ms | ❌ |
 | Keyboard Shortcuts | 50ms | 405ms | ❌ |
-| Filter Tab Switch | 100ms | 4.31s | ❌ |
 | Typing Responsiveness | 50ms | 1.15s | ❌ |
-| Window Resize | 50ms | 0ms | ✅ |
-| Memory (Peak) | 150MB | 71.7MB | ✅ |
-
-## 🔥 Stress Test Results
-
-| Test | Measured | Notes |
-|------|----------|-------|
-| Rapid Command Palette Toggle (10x) | 2.65s | Per 10 toggles |
-| Rapid Filter Switch (10x) | 4.31s | Per 10 switches |
-| Conversation List Scroll | 5.12s | Full scroll cycle |
 
 ## 🧪 Unit Test Results
 
 | Test | Time | Status |
 |------|------|--------|
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.007s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.002s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.003s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.000s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.006s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.002s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.001s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.002s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.009s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.003s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.007s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.355s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.260s | ✅ |
-| My Mac - PowerUserMail (68198) | 0.376s | ✅ |
+| testCommandFiltering | 0.001s | ✅ |
+| testCommandRegistryLookup | 0.007s | ✅ |
+| testConversationCreation | 0.001s | ✅ |
+| testConversationStateRead | 0.001s | ✅ |
+| testConversationStateWrite | 0.002s | ✅ |
+| testDateFormatting | 0.003s | ✅ |
+| testEmailCreation | 0.000s | ✅ |
+| testEmailParsing | 0.001s | ✅ |
+| testFilterConversations | 0.001s | ✅ |
+| testFuzzySearchCommands | 0.006s | ✅ |
+| testInitialsGeneration | 0.001s | ✅ |
+| testMuteConversation | 0.002s | ✅ |
+| testPerformanceMonitorOverhead | 0.001s | ✅ |
+| testPinConversation | 0.002s | ✅ |
+| testReportGeneration | 0.009s | ✅ |
+| testSearchConversations | 0.003s | ✅ |
+| testSortConversations | 0.007s | ✅ |
+| testCommandSearch100Times | 0.355s | ✅ |
+| testFilter1000Conversations | 0.260s | ✅ |
+| testSort1000Conversations | 0.376s | ✅ |
 
 ## 🖥️ UI Test Results
 
 | Test | Time | Status |
 |------|------|--------|
-| My Mac - PowerUserMailUITests-Runner (68251) | 28.172s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 46.044s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 15.392s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 17.054s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 48.322s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 9.939s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 15.501s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 6.849s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 55.053s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 4.555s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 6.650s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 13.528s | ✅ |
-| My Mac - PowerUserMailUITests-Runner (68251) | 2.435s | ✅ |
+| testRapidCommandPaletteToggle | 28.172s | ✅ |
+| testRapidFilterSwitch | 46.044s | ✅ |
+| testTypingResponsiveness | 15.392s | ✅ |
+| testAppLaunchPerformance | 17.054s | ✅ |
+| testAppLaunchToInteractive | 48.322s | ✅ |
+| testCommandPaletteNavigation | 9.939s | ✅ |
+| testCommandPaletteOpen | 15.501s | ✅ |
+| testCommandPaletteSearch | 6.849s | ✅ |
+| testConversationListScroll | 55.053s | ✅ |
+| testFilterTabSwitch | 4.555s | ✅ |
+| testKeyboardShortcutResponse | 6.650s | ✅ |
+| testMemoryFootprint | 13.528s | ✅ |
+| testWindowResize | 2.435s | ✅ |
 
 ## 🔧 Optimization Recommendations
 
-1. **Command Palette Open (1290ms)** - Consider lazy loading command list or caching
-2. **Command Search (295ms)** - Optimize fuzzy search algorithm or add debouncing
-3. **Typing Responsiveness (1152ms)** - Reduce text field update overhead
-4. **List Scrolling (5122ms)** - Implement cell recycling or virtualization
+1. **Command Palette Open** - Consider lazy loading command list or caching
+2. **Command Search** - Optimize fuzzy search algorithm or add debouncing
 
 ---
 
