@@ -29,12 +29,15 @@ final class UpdateManager: ObservableObject {
     static let shared = UpdateManager()
     
     @Published var isChecking = false
+    @Published var isInstalling = false
+    @Published var installProgress: String = ""
     @Published var latestVersion: String?
     @Published var downloadURL: URL?
     @Published var updateAvailable = false
     
     private let repoOwner = "isaaclins"
     private let repoName = "PowerUserMail"
+    private let appName = "PowerUserMail.app"
     
     private init() {}
     
@@ -132,19 +135,19 @@ final class UpdateManager: ObservableObject {
     private func showUpdateAlert(currentVersion: String, latestVersion: String) {
         let alert = NSAlert()
         alert.messageText = "Update Available"
-        alert.informativeText = "A new version of PowerUserMail is available!\n\nCurrent: v\(currentVersion)\nLatest: v\(latestVersion)\n\nWould you like to download it?"
+        alert.informativeText = "A new version of PowerUserMail is available!\n\nCurrent: v\(currentVersion)\nLatest: v\(latestVersion)\n\nWould you like to install it now?"
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Download")
-        alert.addButton(withTitle: "View on GitHub")
+        alert.addButton(withTitle: "Install Now")
+        alert.addButton(withTitle: "Download Only")
         alert.addButton(withTitle: "Later")
         
         let response = alert.runModal()
         
         switch response {
         case .alertFirstButtonReturn:
-            downloadUpdate()
+            Task { await installUpdate() }
         case .alertSecondButtonReturn:
-            openGitHubReleases()
+            downloadUpdate()
         default:
             break
         }
@@ -179,8 +182,6 @@ final class UpdateManager: ObservableObject {
             openGitHubReleases()
             return
         }
-        
-        // Open download in browser or use NSWorkspace to download
         NSWorkspace.shared.open(url)
     }
     
@@ -188,6 +189,152 @@ final class UpdateManager: ObservableObject {
         let url = URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/latest")!
         NSWorkspace.shared.open(url)
     }
+    
+    // MARK: - One-Click Install
+    
+    func installUpdate() async {
+        guard let url = downloadURL else {
+            showInstallError("No download URL available")
+            return
+        }
+        guard !isInstalling else { return }
+        isInstalling = true
+        
+        let progressWindow = showProgressWindow()
+        
+        do {
+            // Download
+            updateProgressWindow(progressWindow, text: "Downloading update...")
+            let (tempZipURL, _) = try await URLSession.shared.download(from: url)
+            
+            // Extract
+            updateProgressWindow(progressWindow, text: "Extracting...")
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            unzip.arguments = ["-o", tempZipURL.path, "-d", tempDir.path]
+            unzip.standardOutput = FileHandle.nullDevice
+            unzip.standardError = FileHandle.nullDevice
+            try unzip.run()
+            unzip.waitUntilExit()
+            guard unzip.terminationStatus == 0 else { throw UpdateError.extractionFailed }
+            
+            // Find .app
+            updateProgressWindow(progressWindow, text: "Locating app...")
+            let extractedAppURL = try findExtractedApp(in: tempDir)
+            
+            // Remove quarantine
+            updateProgressWindow(progressWindow, text: "Removing quarantine...")
+            let xattr = Process()
+            xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+            xattr.arguments = ["-dr", "com.apple.quarantine", extractedAppURL.path]
+            xattr.standardOutput = FileHandle.nullDevice
+            xattr.standardError = FileHandle.nullDevice
+            try xattr.run()
+            xattr.waitUntilExit()
+            
+            // Install
+            updateProgressWindow(progressWindow, text: "Installing...")
+            let currentAppURL = Bundle.main.bundleURL
+            let installDir = currentAppURL.deletingLastPathComponent()
+            let destinationURL = installDir.appendingPathComponent(appName)
+            let backupURL = installDir.appendingPathComponent("\(appName).backup")
+            
+            try? FileManager.default.removeItem(at: backupURL)
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.moveItem(at: destinationURL, to: backupURL)
+            }
+            try FileManager.default.moveItem(at: extractedAppURL, to: destinationURL)
+            
+            // Cleanup
+            try? FileManager.default.removeItem(at: tempDir)
+            try? FileManager.default.removeItem(at: tempZipURL)
+            try? FileManager.default.removeItem(at: backupURL)
+            
+            isInstalling = false
+            closeProgressWindow(progressWindow)
+            showRestartAlert(destinationURL: destinationURL)
+            
+        } catch {
+            isInstalling = false
+            closeProgressWindow(progressWindow)
+            showInstallError(error.localizedDescription)
+        }
+    }
+    
+    private func findExtractedApp(in directory: URL) throws -> URL {
+        let contents = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        if let app = contents.first(where: { $0.pathExtension == "app" }) { return app }
+        for item in contents {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir), isDir.boolValue {
+                let sub = try FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)
+                if let app = sub.first(where: { $0.pathExtension == "app" }) { return app }
+            }
+        }
+        throw UpdateError.appNotFound
+    }
+    
+    private func showRestartAlert(destinationURL: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Update Installed!"
+        alert.informativeText = "PowerUserMail has been updated to v\(latestVersion ?? "latest").\n\nRestart to complete the update."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Restart Now")
+        alert.addButton(withTitle: "Later")
+        if alert.runModal() == .alertFirstButtonReturn {
+            restartApp(at: destinationURL)
+        }
+    }
+    
+    private func restartApp(at appURL: URL) {
+        let script = "sleep 1; open \"\(appURL.path)\""
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+        proc.arguments = ["-c", script]
+        try? proc.run()
+        NSApplication.shared.terminate(nil)
+    }
+    
+    private func showInstallError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Installation Failed"
+        alert.informativeText = "Could not install the update:\n\n\(message)\n\nTry downloading manually."
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Download Manually")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { downloadUpdate() }
+    }
+    
+    private func showProgressWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 80), styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = "Updating PowerUserMail"
+        window.center()
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
+        let prog = NSProgressIndicator(frame: NSRect(x: 20, y: 40, width: 260, height: 20))
+        prog.style = .bar
+        prog.isIndeterminate = true
+        prog.startAnimation(nil)
+        view.addSubview(prog)
+        let label = NSTextField(labelWithString: "Starting...")
+        label.frame = NSRect(x: 20, y: 15, width: 260, height: 20)
+        label.alignment = .center
+        label.identifier = NSUserInterfaceItemIdentifier("progressLabel")
+        view.addSubview(label)
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+    
+    private func updateProgressWindow(_ window: NSWindow, text: String) {
+        if let label = window.contentView?.subviews.first(where: { $0.identifier?.rawValue == "progressLabel" }) as? NSTextField {
+            label.stringValue = text
+        }
+    }
+    
+    private func closeProgressWindow(_ window: NSWindow) { window.close() }
 }
 
 // MARK: - Models
@@ -214,6 +361,8 @@ enum UpdateError: LocalizedError {
     case invalidResponse
     case noReleasesFound
     case httpError(Int)
+    case extractionFailed
+    case appNotFound
     
     var errorDescription: String? {
         switch self {
@@ -223,6 +372,10 @@ enum UpdateError: LocalizedError {
             return "No releases found. This might be a new repository."
         case .httpError(let code):
             return "GitHub API error (HTTP \(code))"
+        case .extractionFailed:
+            return "Failed to extract the downloaded file"
+        case .appNotFound:
+            return "Could not find the app in the downloaded archive"
         }
     }
 }
