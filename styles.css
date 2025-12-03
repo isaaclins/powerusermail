@@ -1226,36 +1226,9 @@ kbd {
         font-size: 0.75rem;
     }
     
-    /* Hero visual / mockup - constrain it */
+    /* Hero visual / mockup - HIDE on mobile */
     .hero-visual {
-        width: 100%;
-        max-width: 100%;
-        padding: 0;
-        overflow: hidden;
-    }
-    
-    .app-mockup {
-        width: 100%;
-        max-width: 100%;
-        overflow: hidden;
-    }
-    
-    .mockup-window {
-        transform: none;
-        width: 100%;
-        max-width: 100%;
-    }
-    
-    .mockup-content {
-        min-height: 250px;
-        overflow: hidden;
-    }
-    
-    .demo-iframe {
-        transform: scale(0.85);
-        transform-origin: top left;
-        width: 118%;
-        height: 118%;
+        display: none;
     }
     
     /* Sections */
