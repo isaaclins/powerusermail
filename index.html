@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PowerUserMail — Email for Power Users</title>
+    <meta name="description" content="A blazing fast, keyboard-first email client for macOS. Command palette, shortcuts, and the speed you deserve.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Animated background -->
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+    <div class="bg-glow glow-1"></div>
+    <div class="bg-glow glow-2"></div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <div class="logo-icon">PUM</div>
+                <span>PowerUserMail</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#shortcuts">Shortcuts</a>
+                <a href="https://github.com/isaaclins/PowerUserMail" target="_blank" rel="noopener">GitHub</a>
+                <a href="#download" class="nav-cta">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="badge-dot"></span>
+                Now available for macOS
+            </div>
+            <h1 class="hero-title">
+                Email at the<br>
+                <span class="gradient-text">Speed of Thought</span>
+            </h1>
+            <p class="hero-subtitle">
+                A blazing fast, keyboard-first email client built for power users. 
+                Command palette, vim-like shortcuts, and zero distractions.
+            </p>
+            <div class="hero-cta">
+                <a href="#download" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7,10 12,15 17,10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download for macOS
+                </a>
+                <a href="https://github.com/isaaclins/PowerUserMail" class="btn btn-secondary" target="_blank" rel="noopener">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    View on GitHub
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-value">⌘K</span>
+                    <span class="stat-label">Command Palette</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">&lt;50ms</span>
+                    <span class="stat-label">Response Time</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">∞</span>
+                    <span class="stat-label">Accounts</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <!-- PLACEHOLDER: App screenshot mockup -->
+            <!-- Size: 900x600px -->
+            <!-- Content: Main app interface showing inbox with command palette open -->
+            <div class="app-mockup">
+                <div class="mockup-window">
+                    <div class="mockup-titlebar">
+                        <div class="titlebar-buttons">
+                            <span class="btn-close"></span>
+                            <span class="btn-minimize"></span>
+                            <span class="btn-maximize"></span>
+                        </div>
+                        <span class="titlebar-title">PowerUserMail</span>
+                    </div>
+                    <div class="mockup-content">
+                        <img src="screenshot-app.png" alt="PowerUserMail Interface" class="mockup-screenshot">
+                    </div>
+                </div>
+                <div class="mockup-reflection"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="section-header">
+            <span class="section-tag">Features</span>
+            <h2 class="section-title">Built for <span class="gradient-text">Speed</span></h2>
+            <p class="section-subtitle">Every feature designed with keyboard warriors in mind</p>
+        </div>
+        
+        <div class="features-grid">
+            <div class="feature-card feature-large">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="9" y1="9" x2="15" y2="9"/>
+                        <line x1="9" y1="13" x2="15" y2="13"/>
+                        <line x1="9" y1="17" x2="12" y2="17"/>
+                    </svg>
+                </div>
+                <h3>Command Palette</h3>
+                <p>Access every action with ⌘K. Search commands, contacts, emails — all from one place. Fuzzy search that actually works.</p>
+                <div class="feature-shortcut">⌘K</div>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                        <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                </div>
+                <h3>Multi-Account</h3>
+                <p>Gmail, Outlook, and more. Switch accounts instantly with complete isolation.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12,6 12,12 16,14"/>
+                    </svg>
+                </div>
+                <h3>Instant Loading</h3>
+                <p>Async, concurrent email fetching. See your inbox populate in real-time.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                </div>
+                <h3>Smart Notifications</h3>
+                <p>Get notified for what matters. Click to jump directly to the conversation.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <h3>Native macOS</h3>
+                <p>Built with SwiftUI. Feels right at home on your Mac. No Electron bloat.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </div>
+                <h3>Dark Mode</h3>
+                <p>Beautiful dark theme that's easy on the eyes. Perfect for late-night emails.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Shortcuts Section -->
+    <section id="shortcuts" class="shortcuts">
+        <div class="section-header">
+            <span class="section-tag">Keyboard First</span>
+            <h2 class="section-title">Your Hands Never Leave the <span class="gradient-text">Keyboard</span></h2>
+            <p class="section-subtitle">Every action is a shortcut away</p>
+        </div>
+
+        <div class="shortcuts-container">
+            <div class="shortcut-group">
+                <h4>Navigation</h4>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>K</kbd></span>
+                    <span class="shortcut-desc">Command Palette</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>S</kbd></span>
+                    <span class="shortcut-desc">Toggle Sidebar</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>N</kbd></span>
+                    <span class="shortcut-desc">New Email</span>
+                </div>
+            </div>
+
+            <div class="shortcut-group">
+                <h4>Filters</h4>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>1</kbd></span>
+                    <span class="shortcut-desc">Show Unread</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>2</kbd></span>
+                    <span class="shortcut-desc">Show All</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>3</kbd></span>
+                    <span class="shortcut-desc">Show Archived</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⌘</kbd><kbd>4</kbd></span>
+                    <span class="shortcut-desc">Show Pinned</span>
+                </div>
+            </div>
+
+            <div class="shortcut-group">
+                <h4>Actions</h4>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>Enter</kbd></span>
+                    <span class="shortcut-desc">Send Message</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>⇧</kbd><kbd>Enter</kbd></span>
+                    <span class="shortcut-desc">New Line</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-keys"><kbd>Esc</kbd></span>
+                    <span class="shortcut-desc">Close/Cancel</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download">
+        <div class="download-card">
+            <div class="download-glow"></div>
+            <div class="download-content">
+                <h2>Ready to Supercharge Your Email?</h2>
+                <p>Download PowerUserMail and experience email the way it should be.</p>
+                <div class="download-buttons">
+                    <a href="https://github.com/isaaclins/PowerUserMail/releases/latest" class="btn btn-primary btn-large">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                        </svg>
+                        Download for macOS
+                    </a>
+                </div>
+                <p class="download-note">Requires macOS 14.0 or later • Free & Open Source</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-logo">
+                <div class="logo-icon">PUM</div>
+                <span>PowerUserMail</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/isaaclins/PowerUserMail" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://github.com/isaaclins/PowerUserMail/releases" target="_blank" rel="noopener">Releases</a>
+                <a href="https://github.com/isaaclins/PowerUserMail/issues" target="_blank" rel="noopener">Issues</a>
+            </div>
+            <p class="footer-copyright">
+                Built with 💜 by <a href="https://github.com/isaaclins" target="_blank" rel="noopener">isaaclins</a>
+            </p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
