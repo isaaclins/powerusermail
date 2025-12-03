@@ -18,11 +18,20 @@ protocol CommandPlugin {
     /// Display title in the command palette
     var title: String { get }
     
+    /// Subtitle/description shown below the title
+    var subtitle: String { get }
+    
     /// Keywords for search matching (e.g., ["mark", "read", "all"])
     var keywords: [String] { get }
     
     /// SF Symbol name for the icon
     var iconSystemName: String { get }
+    
+    /// Icon background color
+    var iconColor: CommandIconColor { get }
+    
+    /// Keyboard shortcut display (e.g., "⌘N")
+    var shortcut: String { get }
     
     /// Whether the command is currently available
     var isEnabled: Bool { get }
@@ -36,9 +45,12 @@ protocol CommandPlugin {
 
 /// Extension with default values
 extension CommandPlugin {
+    var subtitle: String { "" }
     var isEnabled: Bool { true }
     var keywords: [String] { [] }
     var iconSystemName: String { "command" }
+    var iconColor: CommandIconColor { .purple }
+    var shortcut: String { "" }
     var isContextual: Bool { false }
 }
 
@@ -136,8 +148,11 @@ final class CommandRegistry: ObservableObject {
             let action = CommandAction(
                 id: UUID(),
                 title: plugin.title,
+                subtitle: plugin.subtitle,
                 keywords: plugin.keywords,
                 iconSystemName: plugin.iconSystemName,
+                iconColor: plugin.iconColor,
+                shortcut: plugin.shortcut,
                 isEnabled: plugin.isEnabled,
                 isContextual: plugin.isContextual,
                 perform: plugin.execute

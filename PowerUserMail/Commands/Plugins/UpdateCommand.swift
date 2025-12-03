@@ -12,8 +12,11 @@ import Combine
 struct CheckForUpdatesCommand: CommandPlugin {
     let id = "check-for-updates"
     let title = "Check for Updates"
+    let subtitle = "Download latest version"
     let keywords = ["update", "upgrade", "version", "latest", "download", "github", "new", "release"]
     let iconSystemName = "arrow.down.circle"
+    let iconColor: CommandIconColor = .green
+    let shortcut = ""
     
     func execute() {
         Task {

@@ -107,8 +107,8 @@ struct ChatView: View {
                 .frame(minHeight: 40, maxHeight: 120)
 
                 Button(action: sendReply) {
-                    Image(systemName: "arrowtriangle.right.fill")
-                        .font(.system(size: 14))
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 16))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
                         .background(replyText.isEmpty ? Color.gray.opacity(0.5) : Color.accentColor)

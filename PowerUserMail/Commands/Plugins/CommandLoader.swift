@@ -60,8 +60,11 @@ struct CommandLoader {
 struct QuitAppCommand: CommandPlugin {
     let id = "quit-app"
     let title = "Quit PowerUserMail"
+    let subtitle = "Exit the application"
     let keywords = ["quit", "exit", "close", "shutdown", "bye", "powerusermail", "q"]
     let iconSystemName = "power"
+    let iconColor: CommandIconColor = .red
+    let shortcut = "⌘Q"
     
     func execute() {
         NSApplication.shared.terminate(nil)
