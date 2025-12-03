@@ -421,10 +421,12 @@ img {
     min-height: 400px;
 }
 
-.mockup-screenshot {
+.mockup-screenshot,
+.mockup-video {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 0;
 }
 
 .mockup-reflection {

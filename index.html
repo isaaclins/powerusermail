@@ -81,9 +81,8 @@
             </div>
         </div>
         <div class="hero-visual">
-            <!-- PLACEHOLDER: App screenshot mockup -->
-            <!-- Size: 900x600px -->
-            <!-- Content: Main app interface showing inbox with command palette open -->
+            <!-- App demo video/GIF -->
+            <!-- Record demo.html and save as demo.mp4 or demo.gif -->
             <div class="app-mockup">
                 <div class="mockup-window">
                     <div class="mockup-titlebar">
@@ -95,7 +94,12 @@
                         <span class="titlebar-title">PowerUserMail</span>
                     </div>
                     <div class="mockup-content">
-                        <img src="screenshot-app.png" alt="PowerUserMail Interface" class="mockup-screenshot">
+                        <!-- Use video for MP4, img for GIF -->
+                        <video autoplay loop muted playsinline class="mockup-video">
+                            <source src="demo.mp4" type="video/mp4">
+                            <!-- Fallback to GIF if video not supported -->
+                            <img src="demo.gif" alt="PowerUserMail Demo" class="mockup-screenshot">
+                        </video>
                     </div>
                 </div>
                 <div class="mockup-reflection"></div>
