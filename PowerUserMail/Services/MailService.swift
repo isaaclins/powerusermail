@@ -399,12 +399,29 @@ final class GmailService: NSObject, MailService {
     func authenticate() async throws -> Account {
         let tokens = try await performOAuthFlow(config: config, provider: provider)
 
-        // Fetch User Profile
+        // Fetch User Profile with rate limit handling
         let profileURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/profile")!
         var request = URLRequest(url: profileURL)
         request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
 
-        let profile: GmailProfile = try await URLSession.shared.data(for: request)
+        let (profileData, profileResponse) = try await URLSession.shared.data(for: request)
+
+        // Check for rate limit on profile fetch
+        if let httpResponse = profileResponse as? HTTPURLResponse, httpResponse.statusCode == 429 {
+            let retrySeconds = parseRetryAfter(response: httpResponse, data: profileData)
+            let waitMinutes = Int((retrySeconds ?? 60) / 60)
+            throw MailServiceError.custom(
+                "Gmail is temporarily rate limiting requests. Please wait \(waitMinutes) minute(s) and try again."
+            )
+        }
+
+        guard let httpResponse = profileResponse as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode)
+        else {
+            throw MailServiceError.custom("Failed to fetch Gmail profile")
+        }
+
+        let profile = try JSONDecoder().decode(GmailProfile.self, from: profileData)
 
         // Try to fetch profile picture from Google userinfo endpoint
         var profilePictureURL: String? = nil
@@ -861,18 +878,26 @@ final class GmailService: NSObject, MailService {
             if let seconds = Double(retryAfterHeader) {
                 return seconds
             }
+            // Try parsing as ISO date
+            if let seconds = HTTPURLResponse.parseRetryAfterValue(retryAfterHeader), seconds > 0 {
+                return seconds
+            }
         }
 
-        // Try parsing JSON error response (Gmail returns this format)
-        // {"error":{"code":429,"message":"...", "status":"RESOURCE_EXHAUSTED"}}
+        // Try parsing Gmail's JSON error message which contains the timestamp
+        if let bodyString = String(data: data, encoding: .utf8) {
+            if let seconds = parseRetryAfterFromGmailError(bodyString) {
+                return seconds
+            }
+        }
+
+        // Try parsing JSON error response for retryDelay field
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let error = json["error"] as? [String: Any]
         {
-            // Some APIs return retryDelay in the error
             if let details = error["details"] as? [[String: Any]] {
                 for detail in details {
                     if let retryDelay = detail["retryDelay"] as? String {
-                        // Parse "30s" or "1m" format
                         return parseRetryDelayString(retryDelay)
                     }
                 }
