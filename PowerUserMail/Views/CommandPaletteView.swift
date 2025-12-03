@@ -246,10 +246,6 @@ struct CommandPaletteView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.purple.opacity(0.5), lineWidth: 2)
-        )
         .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
         .frame(width: 500)
         .onAppear {
