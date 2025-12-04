@@ -39,8 +39,10 @@ final class InboxViewModel: ObservableObject {
     }
 
     func configure(service: MailService, myEmail: String) {
-        print("📥 InboxViewModel.configure called with email: \(myEmail), service type: \(type(of: service))")
-        
+        print(
+            "📥 InboxViewModel.configure called with email: \(myEmail), service type: \(type(of: service))"
+        )
+
         // CRITICAL: Check if this is a different account or same account
         let isSameAccount = isConfigured && self.myEmail.lowercased() == myEmail.lowercased()
 
@@ -133,7 +135,9 @@ final class InboxViewModel: ObservableObject {
         // Schedule on main run loop to ensure it fires properly
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.timer = Timer.scheduledTimer(withTimeInterval: self.currentPollingInterval, repeats: true) { [weak self] _ in
+            self.timer = Timer.scheduledTimer(
+                withTimeInterval: self.currentPollingInterval, repeats: true
+            ) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     await self?.loadInbox()
                 }
@@ -196,12 +200,12 @@ final class InboxViewModel: ObservableObject {
             print("⏸️ Skipping inbox load - already loading")
             return
         }
-        
+
         guard let service = service else {
             print("❌ Skipping inbox load - no service configured")
             return
         }
-        
+
         guard !requiresReauthentication else {
             print("⛔ Skipping inbox load - re-authentication required")
             return

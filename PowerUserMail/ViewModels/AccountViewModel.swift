@@ -7,21 +7,21 @@ final class AccountViewModel: ObservableObject {
     @Published var selectedAccount: Account?
     @Published var errorMessage: String?
     @Published var isAuthenticating = false
-    
+
     // IMAP configuration state (for the settings form)
     @Published var imapConfig = IMAPConfiguration()
     @Published var showIMAPConfigSheet = false
 
     // Services keyed by account ID to support multiple accounts per provider
     private var services: [String: MailService] = [:]
-    
+
     // UserDefaults key for persisting accounts
     private let accountsKey = "savedAccounts"
 
     init() {
         // Load stored accounts from UserDefaults
         loadAccounts()
-        
+
         // Auto-select the first account if available
         // Note: Don't auto-select here - let ContentView handle it
         // to ensure proper view lifecycle
@@ -29,19 +29,20 @@ final class AccountViewModel: ObservableObject {
             self.selectedAccount = firstAccount
         }
     }
-    
+
     // MARK: - Persistence
-    
+
     private func loadAccounts() {
         guard let data = UserDefaults.standard.data(forKey: accountsKey),
-              let savedAccounts = try? JSONDecoder().decode([Account].self, from: data) else {
+            let savedAccounts = try? JSONDecoder().decode([Account].self, from: data)
+        else {
             print("📭 No saved accounts found")
             return
         }
-        
+
         print("📬 Loaded \(savedAccounts.count) saved accounts")
         accounts = savedAccounts
-        
+
         // Recreate services for each account
         for account in savedAccounts {
             print("🔄 Restoring service for: \(account.emailAddress) (id: \(account.id.uuidString))")
@@ -50,13 +51,13 @@ final class AccountViewModel: ObservableObject {
             services[account.id.uuidString] = service
         }
     }
-    
+
     private func saveAccounts() {
         if let data = try? JSONEncoder().encode(accounts) {
             UserDefaults.standard.set(data, forKey: accountsKey)
         }
     }
-    
+
     private func createService(for provider: MailProvider) -> MailService {
         switch provider {
         case .gmail:
@@ -76,16 +77,16 @@ final class AccountViewModel: ObservableObject {
             showIMAPConfigSheet = true
             return
         }
-        
+
         await performAuthentication(provider: provider)
     }
-    
+
     /// Authenticate with IMAP using the current imapConfig
     func authenticateIMAP() async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         defer { isAuthenticating = false }
-        
+
         // Validate config
         guard !imapConfig.imapHost.isEmpty else {
             errorMessage = "IMAP server host is required"
@@ -99,38 +100,41 @@ final class AccountViewModel: ObservableObject {
             errorMessage = "Password is required"
             return
         }
-        
+
         // Auto-fill SMTP if not provided
         if imapConfig.smtpHost.isEmpty {
-            imapConfig.smtpHost = imapConfig.imapHost.replacingOccurrences(of: "imap.", with: "smtp.")
+            imapConfig.smtpHost = imapConfig.imapHost.replacingOccurrences(
+                of: "imap.", with: "smtp.")
         }
-        
+
         let service = IMAPService(config: imapConfig)
-        
+
         do {
             let account = try await service.authenticate()
-            
+
             // Check if this email is already connected
-            if let existingIndex = accounts.firstIndex(where: { $0.emailAddress.lowercased() == account.emailAddress.lowercased() }) {
+            if let existingIndex = accounts.firstIndex(where: {
+                $0.emailAddress.lowercased() == account.emailAddress.lowercased()
+            }) {
                 accounts[existingIndex] = account
                 services[account.id.uuidString] = service
             } else {
                 accounts.append(account)
                 services[account.id.uuidString] = service
             }
-            
+
             selectedAccount = account
             saveAccounts()
-            
+
             // Reset config and close sheet
             imapConfig = IMAPConfiguration()
             showIMAPConfigSheet = false
-            
+
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-    
+
     private func performAuthentication(provider: MailProvider) async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
@@ -141,9 +145,11 @@ final class AccountViewModel: ObservableObject {
 
         do {
             let account = try await service.authenticate()
-            
+
             // Check if this email is already connected
-            if let existingIndex = accounts.firstIndex(where: { $0.emailAddress.lowercased() == account.emailAddress.lowercased() }) {
+            if let existingIndex = accounts.firstIndex(where: {
+                $0.emailAddress.lowercased() == account.emailAddress.lowercased()
+            }) {
                 // Update existing account
                 accounts[existingIndex] = account
                 services[account.id.uuidString] = service
@@ -152,15 +158,15 @@ final class AccountViewModel: ObservableObject {
                 accounts.append(account)
                 services[account.id.uuidString] = service
             }
-            
+
             selectedAccount = account
             saveAccounts()
-            
+
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-    
+
     // MARK: - Account Management
 
     func service(for provider: MailProvider) -> MailService? {
@@ -170,12 +176,14 @@ final class AccountViewModel: ObservableObject {
         }
         let service = services[account.id.uuidString]
         if service == nil {
-            print("⚠️ service(for:) - No service found for account \(account.emailAddress) (id: \(account.id.uuidString))")
+            print(
+                "⚠️ service(for:) - No service found for account \(account.emailAddress) (id: \(account.id.uuidString))"
+            )
             print("   Available services: \(services.keys.joined(separator: ", "))")
         }
         return service
     }
-    
+
     func service(for account: Account) -> MailService? {
         let service = services[account.id.uuidString]
         if service == nil {
@@ -183,19 +191,19 @@ final class AccountViewModel: ObservableObject {
         }
         return service
     }
-    
+
     func removeAccount(_ account: Account) {
         accounts.removeAll { $0.id == account.id }
         services.removeValue(forKey: account.id.uuidString)
-        
+
         // If we removed the selected account, select another one
         if selectedAccount?.id == account.id {
             selectedAccount = accounts.first
         }
-        
+
         saveAccounts()
     }
-    
+
     func signOutAll() {
         accounts.removeAll()
         services.removeAll()

@@ -5,7 +5,7 @@ enum InboxFilter: String, CaseIterable {
     case unread = "Unread"
     case all = "All"
     case archived = "Archived"
-    
+
     var shortcutNumber: Int {
         switch self {
         case .unread: return 1
@@ -13,7 +13,7 @@ enum InboxFilter: String, CaseIterable {
         case .archived: return 3
         }
     }
-    
+
     var icon: String {
         switch self {
         case .all: return "tray"
@@ -28,13 +28,17 @@ struct InboxView: View {
     @Binding var selectedConversation: Conversation?
     @State private var activeFilter: InboxFilter = .unread  // Demo shows Unread selected by default
     @State private var searchText = ""
-    
+
     let service: MailService
     let myEmail: String
     var onReauthenticate: (() -> Void)?
     var onOpenCommandPalette: (() -> Void)?
 
-    init(viewModel: InboxViewModel, service: MailService, myEmail: String, selectedConversation: Binding<Conversation?>, onReauthenticate: (() -> Void)? = nil, onOpenCommandPalette: (() -> Void)? = nil) {
+    init(
+        viewModel: InboxViewModel, service: MailService, myEmail: String,
+        selectedConversation: Binding<Conversation?>, onReauthenticate: (() -> Void)? = nil,
+        onOpenCommandPalette: (() -> Void)? = nil
+    ) {
         self.viewModel = viewModel
         self.service = service
         self.myEmail = myEmail
@@ -42,28 +46,30 @@ struct InboxView: View {
         self.onReauthenticate = onReauthenticate
         self.onOpenCommandPalette = onOpenCommandPalette
     }
-    
+
     /// Pinned conversations - always shown at top
     private var pinnedConversations: [Conversation] {
         var conversations = viewModel.conversations.filter {
             ConversationStateStore.shared.isPinned(conversationId: $0.id)
         }
-        
+
         // Apply search filter to pinned too
         if !searchText.isEmpty {
             conversations = conversations.filter { conv in
-                conv.person.localizedCaseInsensitiveContains(searchText) ||
-                conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
+                conv.person.localizedCaseInsensitiveContains(searchText)
+                    || conv.messages.contains {
+                        $0.subject.localizedCaseInsensitiveContains(searchText)
+                    }
             }
         }
-        
+
         return conversations
     }
-    
+
     /// Regular (non-pinned) conversations based on current filter
     private var filteredConversations: [Conversation] {
         var conversations: [Conversation]
-        
+
         switch activeFilter {
         case .all:
             conversations = viewModel.conversations
@@ -73,20 +79,22 @@ struct InboxView: View {
             // TODO: Implement archived state tracking
             conversations = []
         }
-        
+
         // Exclude pinned conversations (they're shown separately)
         conversations = conversations.filter {
             !ConversationStateStore.shared.isPinned(conversationId: $0.id)
         }
-        
+
         // Apply search filter
         if !searchText.isEmpty {
             conversations = conversations.filter { conv in
-                conv.person.localizedCaseInsensitiveContains(searchText) ||
-                conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
+                conv.person.localizedCaseInsensitiveContains(searchText)
+                    || conv.messages.contains {
+                        $0.subject.localizedCaseInsensitiveContains(searchText)
+                    }
             }
         }
-        
+
         return conversations
     }
 
@@ -94,10 +102,10 @@ struct InboxView: View {
         VStack(spacing: 0) {
             // Search bar (like demo)
             searchBar
-            
+
             // Filter tabs
             filterBar
-            
+
             ScrollView {
                 LazyVStack(spacing: 0) {
                     // PINNED SECTION - Always visible at top
@@ -114,11 +122,12 @@ struct InboxView: View {
                                 withAnimation(.easeInOut(duration: 0.15)) {
                                     viewModel.select(conversation: conversation)
                                     selectedConversation = conversation
-                                    ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+                                    ConversationStateStore.shared.markAsRead(
+                                        conversationId: conversation.id)
                                 }
                             }
                         }
-                        
+
                         // Separator line
                         HStack {
                             Rectangle()
@@ -128,7 +137,7 @@ struct InboxView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
                     }
-                    
+
                     // REGULAR CONVERSATIONS
                     ForEach(filteredConversations) { conversation in
                         ConversationRow(
@@ -142,7 +151,8 @@ struct InboxView: View {
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 viewModel.select(conversation: conversation)
                                 selectedConversation = conversation
-                                ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
+                                ConversationStateStore.shared.markAsRead(
+                                    conversationId: conversation.id)
                             }
                         }
                     }
@@ -173,9 +183,12 @@ struct InboxView: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .scaleEffect(1.2)
-                    Text(viewModel.loadingProgress.isEmpty ? "Loading chats…" : viewModel.loadingProgress)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        viewModel.loadingProgress.isEmpty
+                            ? "Loading chats…" : viewModel.loadingProgress
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 }
             } else if viewModel.requiresReauthentication {
                 authenticationRequiredView
@@ -184,15 +197,15 @@ struct InboxView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 32))
                         .foregroundStyle(.orange)
-                    
+
                     Text("Something went wrong")
                         .font(.headline)
-                    
+
                     Text(error)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    
+
                     Button("Try Again") {
                         Task { await viewModel.loadInbox() }
                     }
@@ -204,23 +217,28 @@ struct InboxView: View {
                 .shadow(color: .black.opacity(0.15), radius: 20)
             } else if viewModel.conversations.isEmpty && !viewModel.isLoading {
                 ContentUnavailableView("No Messages", systemImage: "tray")
-            } else if filteredConversations.isEmpty && !viewModel.isLoading && activeFilter != .all {
+            } else if filteredConversations.isEmpty && !viewModel.isLoading && activeFilter != .all
+            {
                 ContentUnavailableView(
                     "No \(activeFilter.rawValue) Messages",
                     systemImage: activeFilter.icon
                 )
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter1"))) {
+            _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .unread }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter2"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter2"))) {
+            _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .all }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InboxFilter3"))) {
+            _ in
             withAnimation(.easeInOut(duration: 0.2)) { activeFilter = .archived }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsRead"))) {
+            _ in
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
@@ -235,7 +253,7 @@ struct InboxView: View {
             }
         }
     }
-    
+
     // MARK: - Search Bar (like demo)
     private var searchBar: some View {
         Button {
@@ -244,12 +262,12 @@ struct InboxView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                
+
                 Text("Search emails...")
                     .foregroundStyle(.secondary)
-                
+
                 Spacer()
-                
+
                 Text("⌘K")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -268,7 +286,7 @@ struct InboxView: View {
         .padding(.top, 8)
         .padding(.bottom, 4)
     }
-    
+
     // MARK: - Authentication Required View
     private var authenticationRequiredView: some View {
         VStack(spacing: 16) {
@@ -276,22 +294,22 @@ struct InboxView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.orange)
                 .symbolEffect(.pulse)
-            
+
             Text("Session Expired")
                 .font(.title2.bold())
-            
+
             if let email = viewModel.reauthEmail {
                 Text("Your session for **\(email)** has expired.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            
+
             Text("Please sign in again to continue using PowerUserMail.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            
+
             VStack(spacing: 10) {
                 Button {
                     onReauthenticate?()
@@ -304,7 +322,7 @@ struct InboxView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                
+
                 Button("Switch Account") {
                     NotificationCenter.default.post(
                         name: Notification.Name("ShowAccountSwitcher"),
@@ -322,7 +340,7 @@ struct InboxView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.2), radius: 24)
     }
-    
+
     // MARK: - Filter Bar (demo style)
     private var filterBar: some View {
         HStack(spacing: 8) {
@@ -342,23 +360,24 @@ struct InboxView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
-    
+
     /// Extract a cleaner display name from email addresses
     private func displayName(for person: String) -> String {
         if person.hasPrefix("Topic:") {
             return person
         }
-        
+
         if let nameEnd = person.firstIndex(of: "<") {
             let name = String(person[..<nameEnd]).trimmingCharacters(in: .whitespaces)
             if !name.isEmpty {
                 return name
             }
         }
-        
+
         if let atIndex = person.firstIndex(of: "@") {
             let localPart = String(person[..<atIndex])
-            let formatted = localPart
+            let formatted =
+                localPart
                 .replacingOccurrences(of: ".", with: " ")
                 .replacingOccurrences(of: "_", with: " ")
                 .split(separator: " ")
@@ -366,7 +385,7 @@ struct InboxView: View {
                 .joined(separator: " ")
             return formatted
         }
-        
+
         return person
     }
 }
@@ -376,16 +395,16 @@ struct FilterPill: View {
     let filter: InboxFilter
     let isActive: Bool
     let action: () -> Void
-    
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text("⌘\(filter.shortcutNumber)")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(isActive ? .white.opacity(0.9) : .secondary)
-                
+
                 Text(filter.rawValue)
                     .font(.system(size: 13, weight: .medium))
             }
@@ -393,7 +412,9 @@ struct FilterPill: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(isActive ? Color.accentColor : Color.secondary.opacity(isHovered ? 0.15 : 0.1))
+                    .fill(
+                        isActive
+                            ? Color.accentColor : Color.secondary.opacity(isHovered ? 0.15 : 0.1))
             )
             .foregroundStyle(isActive ? .white : .primary)
         }
@@ -413,17 +434,17 @@ struct ConversationRow: View {
     let isSelected: Bool
     let displayName: String
     var showPinIcon: Bool = false
-    
+
     @State private var isHovered = false
-    
+
     private var isTopic: Bool {
         PromotedThreadStore.shared.isPromoted(threadId: conversation.id)
     }
-    
+
     private var hasUnread: Bool {
         conversation.hasUnread
     }
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Profile picture (larger like demo ~44px)
@@ -445,7 +466,7 @@ struct ConversationRow: View {
             } else {
                 SenderProfilePicture(email: conversation.person, size: 44)
             }
-            
+
             // Content
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -453,23 +474,23 @@ struct ConversationRow: View {
                         .font(.system(size: 15, weight: hasUnread ? .semibold : .regular))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    
+
                     // Pin icon for pinned conversations
                     if showPinIcon {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.orange)
                     }
-                    
+
                     Spacer()
-                    
+
                     if let last = conversation.latestMessage {
                         Text(last.receivedAt.relativeTimeString())
                             .font(.system(size: 12))
                             .foregroundStyle(hasUnread ? Color.accentColor : Color.secondary)
                     }
                 }
-                
+
                 HStack {
                     if let last = conversation.latestMessage {
                         Text(last.preview.isEmpty ? last.subject : last.preview)
@@ -477,9 +498,9 @@ struct ConversationRow: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    
+
                     Spacer()
-                    
+
                     // Unread indicator on the RIGHT (like demo)
                     if hasUnread {
                         Circle()
@@ -508,11 +529,13 @@ struct ConversationRow: View {
                 ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
             } label: {
                 Label(
-                    ConversationStateStore.shared.isPinned(conversationId: conversation.id) ? "Unpin" : "Pin to Top",
-                    systemImage: ConversationStateStore.shared.isPinned(conversationId: conversation.id) ? "pin.slash" : "pin"
+                    ConversationStateStore.shared.isPinned(conversationId: conversation.id)
+                        ? "Unpin" : "Pin to Top",
+                    systemImage: ConversationStateStore.shared.isPinned(
+                        conversationId: conversation.id) ? "pin.slash" : "pin"
                 )
             }
-            
+
             Button {
                 ConversationStateStore.shared.toggleRead(conversationId: conversation.id)
             } label: {
@@ -521,18 +544,20 @@ struct ConversationRow: View {
                     systemImage: hasUnread ? "envelope.open" : "envelope.badge"
                 )
             }
-            
+
             Button {
                 ConversationStateStore.shared.toggleMuted(conversationId: conversation.id)
             } label: {
                 Label(
-                    ConversationStateStore.shared.isMuted(conversationId: conversation.id) ? "Unmute" : "Mute",
-                    systemImage: ConversationStateStore.shared.isMuted(conversationId: conversation.id) ? "bell" : "bell.slash"
+                    ConversationStateStore.shared.isMuted(conversationId: conversation.id)
+                        ? "Unmute" : "Mute",
+                    systemImage: ConversationStateStore.shared.isMuted(
+                        conversationId: conversation.id) ? "bell" : "bell.slash"
                 )
             }
-            
+
             Divider()
-            
+
             if isTopic {
                 Button {
                     PromotedThreadStore.shared.demote(threadId: conversation.id)
@@ -548,15 +573,15 @@ struct ConversationRow: View {
                     Label("Promote to Topic", systemImage: "arrow.up.forward.square")
                 }
             }
-            
+
             Divider()
-            
+
             Button {
                 // TODO: Implement archive via API
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
-            
+
             Button(role: .destructive) {
                 // TODO: Implement delete via API
             } label: {
@@ -564,7 +589,7 @@ struct ConversationRow: View {
             }
         }
     }
-    
+
     private var backgroundColor: Color {
         if isSelected {
             return Color.accentColor.opacity(0.2)
