@@ -436,13 +436,18 @@ struct ConversationRow: View {
     var showPinIcon: Bool = false
 
     @State private var isHovered = false
+    @ObservedObject private var stateStore = ConversationStateStore.shared
 
     private var isTopic: Bool {
         PromotedThreadStore.shared.isPromoted(threadId: conversation.id)
     }
 
     private var hasUnread: Bool {
-        conversation.hasUnread
+        // Check if marked as read in the store - this will now trigger updates when store changes
+        if stateStore.readConversationIDs.contains(conversation.id) {
+            return false
+        }
+        return conversation.messages.contains { !$0.isRead }
     }
 
     var body: some View {
