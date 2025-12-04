@@ -1,6 +1,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import Network
 
 enum MailServiceError: Error, LocalizedError {
     case authenticationRequired
@@ -646,8 +647,9 @@ final class GmailService: NSObject, MailService {
                     let maxPages = 5
                     var pageCount = 0
                     var hasRetried = false  // Only retry token refresh once
+                    var shouldContinue = true  // Track if we should keep fetching pages
 
-                    repeat {
+                    while shouldContinue && pageCount < maxPages {
                         // Check rate limiter before list request
                         let waitTime = await RateLimiter.shared.shouldWait(
                             for: account.emailAddress)
@@ -674,19 +676,25 @@ final class GmailService: NSObject, MailService {
                                 for: listRequest)
 
                             // Check for rate limit on list request
-                            if let httpResponse = response as? HTTPURLResponse,
-                                httpResponse.statusCode == 429
-                            {
-                                let retrySeconds = parseRetryAfter(
-                                    response: httpResponse, data: data)
-                                await RateLimiter.shared.requestRateLimited(
-                                    for: account.emailAddress, retryAfterSeconds: retrySeconds)
-                                print("🚫 Gmail: Rate limited on list request, waiting...")
-                                try? await Task.sleep(
-                                    nanoseconds: UInt64((retrySeconds ?? 60) * 1_000_000_000))
-                                continue  // Retry this page
+                            if let httpResponse = response as? HTTPURLResponse {
+                                if httpResponse.statusCode == 429 {
+                                    let retrySeconds = parseRetryAfter(
+                                        response: httpResponse, data: data)
+                                    await RateLimiter.shared.requestRateLimited(
+                                        for: account.emailAddress, retryAfterSeconds: retrySeconds)
+                                    print("🚫 Gmail: Rate limited on list request, waiting...")
+                                    try? await Task.sleep(
+                                        nanoseconds: UInt64((retrySeconds ?? 60) * 1_000_000_000))
+                                    continue  // Retry this page
+                                }
+                                
+                                // Check for 401 Unauthorized - token is invalid
+                                if httpResponse.statusCode == 401 {
+                                    print("⚠️ Gmail: Got 401 on list request - token is invalid")
+                                    throw APIError.unauthorized
+                                }
                             }
-
+                            
                             let listResponse = try JSONDecoder().decode(
                                 GmailThreadListResponse.self, from: data)
                             await RateLimiter.shared.requestSucceeded(for: account.emailAddress)
@@ -799,6 +807,11 @@ final class GmailService: NSObject, MailService {
                             }
 
                             pageCount += 1
+                            
+                            // Check if we should continue to the next page
+                            if nextPageToken == nil {
+                                shouldContinue = false
+                            }
                         } catch APIError.unauthorized {
                             // Token was rejected by server - try to refresh once
                             if !hasRetried {
@@ -833,7 +846,7 @@ final class GmailService: NSObject, MailService {
                                 return
                             }
                         }
-                    } while nextPageToken != nil && pageCount < maxPages
+                    }
 
                     continuation.finish()
                 } catch {
@@ -1370,6 +1383,656 @@ final class OutlookService: NSObject, MailService {
     }
 }
 
+// MARK: - Custom IMAP Service
+
+final class IMAPService: MailService {
+    private(set) var account: Account?
+    var provider: MailProvider { .imap }
+    var isAuthenticated: Bool { account?.isAuthenticated == true }
+    
+    private var config: IMAPConfiguration?
+    private var connection: NWConnection?
+    private var commandTag = 0
+    private var responseBuffer = Data()
+    
+    init() {}
+    
+    init(config: IMAPConfiguration) {
+        self.config = config
+    }
+    
+    func configure(_ config: IMAPConfiguration) {
+        self.config = config
+    }
+    
+    func restoreAccount(_ account: Account) {
+        print("🔄 IMAP: Restoring account \(account.emailAddress)")
+        self.account = account
+        
+        // Restore configuration from keychain
+        if let configData = KeychainHelper.shared.read(account: imapConfigKey(for: account.emailAddress)),
+           let data = configData.data(using: .utf8),
+           let savedConfig = try? JSONDecoder().decode(IMAPConfiguration.self, from: data) {
+            self.config = savedConfig
+            print("   ✅ IMAP config restored for \(account.emailAddress)")
+        }
+    }
+    
+    private func imapConfigKey(for email: String) -> String {
+        "powerusermail.imap.\(email.lowercased()).config"
+    }
+    
+    private func imapPasswordKey(for email: String) -> String {
+        "powerusermail.imap.\(email.lowercased()).password"
+    }
+    
+    func authenticate() async throws -> Account {
+        guard let config = config else {
+            throw MailServiceError.custom("IMAP configuration not set")
+        }
+        
+        // Test connection to IMAP server
+        try await testConnection(config: config)
+        
+        let email = config.username
+        let displayName = email.components(separatedBy: "@").first?.capitalized ?? "IMAP User"
+        
+        let newAccount = Account(
+            provider: .imap,
+            emailAddress: email,
+            displayName: displayName,
+            accessToken: "", // Not used for IMAP
+            refreshToken: nil,
+            isAuthenticated: true
+        )
+        
+        account = newAccount
+        
+        // Store config in keychain (without password)
+        var configToStore = config
+        configToStore.password = "" // Password stored separately
+        if let configData = try? JSONEncoder().encode(configToStore),
+           let configString = String(data: configData, encoding: .utf8) {
+            KeychainHelper.shared.save(configString, account: imapConfigKey(for: email))
+        }
+        
+        // Store password separately in keychain
+        KeychainHelper.shared.save(config.password, account: imapPasswordKey(for: email))
+        
+        print("✅ IMAP: Authenticated as \(email)")
+        return newAccount
+    }
+    
+    private func testConnection(config: IMAPConfiguration) async throws {
+        // Create TLS parameters for secure connection
+        let tlsOptions = NWProtocolTLS.Options()
+        
+        // Allow self-signed certificates for testing (you might want to make this configurable)
+        sec_protocol_options_set_verify_block(
+            tlsOptions.securityProtocolOptions,
+            { _, _, completion in
+                completion(true) // Accept all certificates - for dev/testing
+            },
+            .main
+        )
+        
+        let parameters = NWParameters(tls: config.useSSL ? tlsOptions : nil)
+        
+        let connection = NWConnection(
+            host: NWEndpoint.Host(config.imapHost),
+            port: NWEndpoint.Port(integerLiteral: UInt16(config.imapPort)),
+            using: parameters
+        )
+        
+        // Use withCheckedThrowingContinuation for async/await pattern
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var hasResumed = false
+            
+            connection.stateUpdateHandler = { state in
+                guard !hasResumed else { return }
+                
+                switch state {
+                case .ready:
+                    print("✅ IMAP: Connected to \(config.imapHost):\(config.imapPort)")
+                    hasResumed = true
+                    
+                    // Now try to login
+                    self.performIMAPLogin(connection: connection, config: config) { result in
+                        connection.cancel()
+                        switch result {
+                        case .success:
+                            continuation.resume()
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                case .failed(let error):
+                    hasResumed = true
+                    connection.cancel()
+                    continuation.resume(throwing: MailServiceError.custom("Connection failed: \(error.localizedDescription)"))
+                    
+                case .cancelled:
+                    if !hasResumed {
+                        hasResumed = true
+                        continuation.resume(throwing: MailServiceError.custom("Connection cancelled"))
+                    }
+                    
+                default:
+                    break
+                }
+            }
+            
+            connection.start(queue: .global())
+            
+            // Timeout after 15 seconds
+            DispatchQueue.global().asyncAfter(deadline: .now() + 15) {
+                if !hasResumed {
+                    hasResumed = true
+                    connection.cancel()
+                    continuation.resume(throwing: MailServiceError.custom("Connection timeout"))
+                }
+            }
+        }
+    }
+    
+    private func performIMAPLogin(connection: NWConnection, config: IMAPConfiguration, completion: @escaping (Result<Void, Error>) -> Void) {
+        // Read server greeting first
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, _, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                completion(.failure(MailServiceError.custom("Failed to read greeting: \(error.localizedDescription)")))
+                return
+            }
+            
+            if let data = data, let greeting = String(data: data, encoding: .utf8) {
+                print("📨 IMAP Greeting: \(greeting.trimmingCharacters(in: .whitespacesAndNewlines))")
+                
+                // Send LOGIN command
+                self.commandTag += 1
+                let tag = "A\(String(format: "%04d", self.commandTag))"
+                let loginCommand = "\(tag) LOGIN \(config.username) \(config.password)\r\n"
+                
+                connection.send(content: loginCommand.data(using: .utf8), completion: .contentProcessed { sendError in
+                    if let sendError = sendError {
+                        completion(.failure(MailServiceError.custom("Failed to send login: \(sendError.localizedDescription)")))
+                        return
+                    }
+                    
+                    // Read login response
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { responseData, _, _, recvError in
+                        if let recvError = recvError {
+                            completion(.failure(MailServiceError.custom("Failed to read login response: \(recvError.localizedDescription)")))
+                            return
+                        }
+                        
+                        if let responseData = responseData, let response = String(data: responseData, encoding: .utf8) {
+                            print("📨 IMAP Login Response: \(response.trimmingCharacters(in: .whitespacesAndNewlines))")
+                            
+                            if response.contains("\(tag) OK") {
+                                // Login successful, send LOGOUT
+                                self.commandTag += 1
+                                let logoutTag = "A\(String(format: "%04d", self.commandTag))"
+                                let logoutCommand = "\(logoutTag) LOGOUT\r\n"
+                                
+                                connection.send(content: logoutCommand.data(using: .utf8), completion: .contentProcessed { _ in
+                                    completion(.success(()))
+                                })
+                            } else if response.contains("NO") || response.contains("BAD") {
+                                completion(.failure(MailServiceError.custom("Login failed: Invalid credentials")))
+                            } else {
+                                completion(.failure(MailServiceError.custom("Unexpected response: \(response)")))
+                            }
+                        } else {
+                            completion(.failure(MailServiceError.custom("Empty login response")))
+                        }
+                    }
+                })
+            } else {
+                completion(.failure(MailServiceError.custom("No server greeting received")))
+            }
+        }
+    }
+    
+    func fetchInbox() async throws -> [EmailThread] {
+        guard let account = account, let config = config else {
+            throw MailServiceError.authenticationRequired
+        }
+        
+        // Get password from keychain
+        guard let password = KeychainHelper.shared.read(account: imapPasswordKey(for: account.emailAddress)) else {
+            throw MailServiceError.custom("IMAP password not found")
+        }
+        
+        var fullConfig = config
+        fullConfig.password = password
+        
+        return try await fetchIMAPMessages(config: fullConfig)
+    }
+    
+    private func fetchIMAPMessages(config: IMAPConfiguration) async throws -> [EmailThread] {
+        // For now, return a simplified implementation
+        // A full implementation would require a complete IMAP protocol handler
+        // Consider using a library like swift-nio-imap in the future
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let tlsOptions = NWProtocolTLS.Options()
+            sec_protocol_options_set_verify_block(
+                tlsOptions.securityProtocolOptions,
+                { _, _, completion in completion(true) },
+                .main
+            )
+            
+            let parameters = NWParameters(tls: config.useSSL ? tlsOptions : nil)
+            let connection = NWConnection(
+                host: NWEndpoint.Host(config.imapHost),
+                port: NWEndpoint.Port(integerLiteral: UInt16(config.imapPort)),
+                using: parameters
+            )
+            
+            var threads: [EmailThread] = []
+            var hasResumed = false
+            
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    self.fetchEmailsFromConnection(connection: connection, config: config) { result in
+                        guard !hasResumed else { return }
+                        hasResumed = true
+                        connection.cancel()
+                        
+                        switch result {
+                        case .success(let fetchedThreads):
+                            continuation.resume(returning: fetchedThreads)
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                case .failed(let error):
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    connection.cancel()
+                    continuation.resume(throwing: MailServiceError.custom("Connection failed: \(error.localizedDescription)"))
+                default:
+                    break
+                }
+            }
+            
+            connection.start(queue: .global())
+            
+            // Timeout
+            DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
+                guard !hasResumed else { return }
+                hasResumed = true
+                connection.cancel()
+                continuation.resume(throwing: MailServiceError.custom("Fetch timeout"))
+            }
+        }
+    }
+    
+    private func fetchEmailsFromConnection(connection: NWConnection, config: IMAPConfiguration, completion: @escaping (Result<[EmailThread], Error>) -> Void) {
+        var responseBuffer = ""
+        var threads: [EmailThread] = []
+        var commandTag = 0
+        
+        func sendCommand(_ command: String, expectTag: String, then: @escaping (String) -> Void) {
+            connection.send(content: "\(command)\r\n".data(using: .utf8), completion: .contentProcessed { error in
+                if let error = error {
+                    completion(.failure(MailServiceError.custom("Send failed: \(error.localizedDescription)")))
+                    return
+                }
+                
+                readUntilTag(expectTag, then: then)
+            })
+        }
+        
+        func readUntilTag(_ tag: String, then: @escaping (String) -> Void) {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
+                if let data = data, let str = String(data: data, encoding: .utf8) {
+                    responseBuffer += str
+                    
+                    // Check if we have the complete response
+                    if responseBuffer.contains("\(tag) OK") || responseBuffer.contains("\(tag) NO") || responseBuffer.contains("\(tag) BAD") {
+                        let response = responseBuffer
+                        responseBuffer = ""
+                        then(response)
+                    } else {
+                        // Continue reading
+                        readUntilTag(tag, then: then)
+                    }
+                } else if let error = error {
+                    completion(.failure(MailServiceError.custom("Read failed: \(error.localizedDescription)")))
+                }
+            }
+        }
+        
+        // Read greeting
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+            guard let _ = data else {
+                completion(.failure(MailServiceError.custom("No greeting")))
+                return
+            }
+            
+            // Login
+            commandTag += 1
+            let loginTag = "A\(String(format: "%04d", commandTag))"
+            sendCommand("\(loginTag) LOGIN \(config.username) \(config.password)", expectTag: loginTag) { loginResp in
+                guard loginResp.contains("\(loginTag) OK") else {
+                    completion(.failure(MailServiceError.custom("Login failed")))
+                    return
+                }
+                
+                // Select INBOX
+                commandTag += 1
+                let selectTag = "A\(String(format: "%04d", commandTag))"
+                sendCommand("\(selectTag) SELECT INBOX", expectTag: selectTag) { selectResp in
+                    guard selectResp.contains("\(selectTag) OK") else {
+                        completion(.failure(MailServiceError.custom("SELECT failed")))
+                        return
+                    }
+                    
+                    // Fetch last 20 messages headers
+                    commandTag += 1
+                    let fetchTag = "A\(String(format: "%04d", commandTag))"
+                    sendCommand("\(fetchTag) FETCH 1:20 (UID FLAGS ENVELOPE BODY.PEEK[TEXT]<0.500>)", expectTag: fetchTag) { fetchResp in
+                        // Parse the FETCH response
+                        threads = self.parseIMAPFetchResponse(fetchResp, email: config.username)
+                        
+                        // Logout
+                        commandTag += 1
+                        let logoutTag = "A\(String(format: "%04d", commandTag))"
+                        sendCommand("\(logoutTag) LOGOUT", expectTag: logoutTag) { _ in
+                            completion(.success(threads))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func parseIMAPFetchResponse(_ response: String, email: String) -> [EmailThread] {
+        var threads: [EmailThread] = []
+        
+        // Simple parser for IMAP ENVELOPE responses
+        // Format: * n FETCH (UID nn FLAGS (...) ENVELOPE (...) BODY[TEXT] {...})
+        
+        let lines = response.components(separatedBy: "\r\n")
+        var currentMessage: [String: String] = [:]
+        
+        for line in lines {
+            if line.starts(with: "* ") && line.contains("FETCH") {
+                // Parse envelope
+                if let envelopeRange = line.range(of: "ENVELOPE (") {
+                    let envelopeStart = envelopeRange.upperBound
+                    // Find matching closing paren (simplified)
+                    if let envelopeEnd = findMatchingParen(in: line, from: envelopeStart) {
+                        let envelope = String(line[envelopeStart..<envelopeEnd])
+                        let parsed = parseEnvelope(envelope)
+                        
+                        let messageId = "imap-\(UUID().uuidString)"
+                        let message = Email(
+                            id: messageId,
+                            threadId: messageId,
+                            subject: parsed["subject"] ?? "(No Subject)",
+                            from: parsed["from"] ?? "Unknown",
+                            to: [email],
+                            preview: "",
+                            body: "",
+                            receivedAt: parseIMAPDate(parsed["date"] ?? "") ?? Date()
+                        )
+                        
+                        let thread = EmailThread(
+                            id: messageId,
+                            subject: message.subject,
+                            messages: [message],
+                            participants: [message.from, email]
+                        )
+                        threads.append(thread)
+                    }
+                }
+            }
+        }
+        
+        return threads
+    }
+    
+    private func findMatchingParen(in str: String, from start: String.Index) -> String.Index? {
+        var depth = 1
+        var index = start
+        
+        while index < str.endIndex && depth > 0 {
+            let char = str[index]
+            if char == "(" { depth += 1 }
+            else if char == ")" { depth -= 1 }
+            index = str.index(after: index)
+        }
+        
+        return depth == 0 ? str.index(before: index) : nil
+    }
+    
+    private func parseEnvelope(_ envelope: String) -> [String: String] {
+        var result: [String: String] = [:]
+        
+        // ENVELOPE format: (date subject from sender reply-to to cc bcc in-reply-to message-id)
+        // This is a simplified parser
+        
+        // Extract quoted strings
+        let regex = try? NSRegularExpression(pattern: "\"([^\"\\\\]|\\\\.)*\"", options: [])
+        let range = NSRange(envelope.startIndex..., in: envelope)
+        
+        if let matches = regex?.matches(in: envelope, options: [], range: range) {
+            if matches.count >= 1, let dateRange = Range(matches[0].range, in: envelope) {
+                result["date"] = String(envelope[dateRange]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+            if matches.count >= 2, let subjectRange = Range(matches[1].range, in: envelope) {
+                result["subject"] = String(envelope[subjectRange]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+        }
+        
+        // Try to extract from address
+        if let fromMatch = envelope.range(of: "\\(\\(NIL NIL \"([^\"]+)\" \"([^\"]+)\"\\)\\)", options: .regularExpression) {
+            let fromStr = String(envelope[fromMatch])
+            // Extract email parts
+            if let nameMatch = fromStr.range(of: "\"[^\"]+\"", options: .regularExpression) {
+                result["from"] = String(fromStr[nameMatch]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+        }
+        
+        return result
+    }
+    
+    private func parseIMAPDate(_ dateStr: String) -> Date? {
+        // IMAP date format: "03-Dec-2025 10:30:00 +0000"
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd-MMM-yyyy HH:mm:ss Z"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: dateStr)
+    }
+    
+    func fetchInboxStream() -> AsyncThrowingStream<EmailThread, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let threads = try await self.fetchInbox()
+                    for thread in threads {
+                        continuation.yield(thread)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+    
+    func fetchMessage(id: String) async throws -> Email {
+        throw MailServiceError.unsupported
+    }
+    
+    func send(message: DraftMessage) async throws {
+        guard let account = account, let config = config else {
+            throw MailServiceError.authenticationRequired
+        }
+        
+        guard let password = KeychainHelper.shared.read(account: imapPasswordKey(for: account.emailAddress)) else {
+            throw MailServiceError.custom("SMTP password not found")
+        }
+        
+        // Send via SMTP
+        try await sendSMTP(message: message, config: config, password: password)
+    }
+    
+    private func sendSMTP(message: DraftMessage, config: IMAPConfiguration, password: String) async throws {
+        // Create connection to SMTP server
+        let tlsOptions = NWProtocolTLS.Options()
+        sec_protocol_options_set_verify_block(
+            tlsOptions.securityProtocolOptions,
+            { _, _, completion in completion(true) },
+            .main
+        )
+        
+        // Use STARTTLS for port 587, direct TLS for 465
+        let useTLS = config.smtpPort == 465
+        let parameters = NWParameters(tls: useTLS ? tlsOptions : nil)
+        
+        let connection = NWConnection(
+            host: NWEndpoint.Host(config.smtpHost),
+            port: NWEndpoint.Port(integerLiteral: UInt16(config.smtpPort)),
+            using: parameters
+        )
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var hasResumed = false
+            
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    self.performSMTPSend(connection: connection, message: message, config: config, password: password) { result in
+                        guard !hasResumed else { return }
+                        hasResumed = true
+                        connection.cancel()
+                        
+                        switch result {
+                        case .success:
+                            continuation.resume()
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                case .failed(let error):
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    connection.cancel()
+                    continuation.resume(throwing: MailServiceError.custom("SMTP connection failed: \(error.localizedDescription)"))
+                default:
+                    break
+                }
+            }
+            
+            connection.start(queue: .global())
+            
+            DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
+                guard !hasResumed else { return }
+                hasResumed = true
+                connection.cancel()
+                continuation.resume(throwing: MailServiceError.custom("SMTP timeout"))
+            }
+        }
+    }
+    
+    private func performSMTPSend(connection: NWConnection, message: DraftMessage, config: IMAPConfiguration, password: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        var responseBuffer = ""
+        
+        func send(_ command: String, expectCode: String, then: @escaping () -> Void) {
+            let data = "\(command)\r\n".data(using: .utf8)!
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error = error {
+                    completion(.failure(MailServiceError.custom("SMTP send failed: \(error.localizedDescription)")))
+                    return
+                }
+                
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, error in
+                    if let data = data, let response = String(data: data, encoding: .utf8) {
+                        responseBuffer = response
+                        if response.contains(expectCode) || response.hasPrefix(expectCode) {
+                            then()
+                        } else {
+                            completion(.failure(MailServiceError.custom("SMTP error: \(response)")))
+                        }
+                    } else {
+                        completion(.failure(MailServiceError.custom("SMTP no response")))
+                    }
+                }
+            })
+        }
+        
+        // Read greeting
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+            guard let data = data, let greeting = String(data: data, encoding: .utf8), greeting.contains("220") else {
+                completion(.failure(MailServiceError.custom("No SMTP greeting")))
+                return
+            }
+            
+            // EHLO
+            send("EHLO localhost", expectCode: "250") {
+                // AUTH LOGIN
+                send("AUTH LOGIN", expectCode: "334") {
+                    // Username (base64)
+                    let user64 = Data(config.username.utf8).base64EncodedString()
+                    send(user64, expectCode: "334") {
+                        // Password (base64)
+                        let pass64 = Data(password.utf8).base64EncodedString()
+                        send(pass64, expectCode: "235") {
+                            // MAIL FROM
+                            send("MAIL FROM:<\(config.username)>", expectCode: "250") {
+                                // RCPT TO (for each recipient)
+                                let recipients = message.to + message.cc + message.bcc
+                                
+                                func sendRecipients(_ remaining: [String]) {
+                                    if let recipient = remaining.first {
+                                        send("RCPT TO:<\(recipient)>", expectCode: "250") {
+                                            sendRecipients(Array(remaining.dropFirst()))
+                                        }
+                                    } else {
+                                        // DATA
+                                        send("DATA", expectCode: "354") {
+                                            // Construct email content
+                                            var emailContent = "From: \(config.username)\r\n"
+                                            emailContent += "To: \(message.to.joined(separator: ", "))\r\n"
+                                            if !message.cc.isEmpty {
+                                                emailContent += "Cc: \(message.cc.joined(separator: ", "))\r\n"
+                                            }
+                                            emailContent += "Subject: \(message.subject)\r\n"
+                                            emailContent += "MIME-Version: 1.0\r\n"
+                                            emailContent += "Content-Type: text/plain; charset=UTF-8\r\n"
+                                            emailContent += "\r\n"
+                                            emailContent += message.body
+                                            emailContent += "\r\n.\r\n"
+                                            
+                                            send(emailContent, expectCode: "250") {
+                                                send("QUIT", expectCode: "221") {
+                                                    completion(.success(()))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                sendRecipients(recipients)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func archive(id: String) async throws {
+        throw MailServiceError.unsupported
+    }
+}
+
 extension String {
     func base64UrlDecoded() -> String? {
         var base64 =
@@ -1385,6 +2048,7 @@ extension String {
 
     /// RFC 2047 MIME encoding for email headers (Subject, etc.)
     /// Encodes non-ASCII characters so they display correctly in email clients
+
     func mimeEncodedHeader() -> String {
         // Check if encoding is needed (contains non-ASCII characters)
         let needsEncoding = self.unicodeScalars.contains { !$0.isASCII }

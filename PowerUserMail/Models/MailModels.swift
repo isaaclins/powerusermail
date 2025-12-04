@@ -3,6 +3,7 @@ import Foundation
 enum MailProvider: String, CaseIterable, Codable, Identifiable {
     case gmail
     case outlook
+    case imap
 
     var id: String { rawValue }
     var displayName: String {
@@ -11,6 +12,8 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "Gmail"
         case .outlook:
             return "Outlook"
+        case .imap:
+            return "IMAP"
         }
     }
 
@@ -20,6 +23,8 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "envelope.open.fill"
         case .outlook:
             return "envelope.circle.fill"
+        case .imap:
+            return "server.rack"
         }
     }
 
@@ -29,7 +34,51 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "GmailLogo"
         case .outlook:
             return "OutlookLogo"
+        case .imap:
+            return ""  // Will use system icon instead
         }
+    }
+    
+    /// Whether this provider uses OAuth (vs direct credentials)
+    var usesOAuth: Bool {
+        switch self {
+        case .gmail, .outlook:
+            return true
+        case .imap:
+            return false
+        }
+    }
+}
+
+// MARK: - IMAP Configuration
+struct IMAPConfiguration: Codable, Equatable {
+    var imapHost: String
+    var imapPort: Int
+    var smtpHost: String
+    var smtpPort: Int
+    var username: String
+    var password: String  // Will be stored in Keychain
+    var useSSL: Bool
+    var useTLS: Bool
+    
+    init(
+        imapHost: String = "",
+        imapPort: Int = 993,
+        smtpHost: String = "",
+        smtpPort: Int = 587,
+        username: String = "",
+        password: String = "",
+        useSSL: Bool = true,
+        useTLS: Bool = true
+    ) {
+        self.imapHost = imapHost
+        self.imapPort = imapPort
+        self.smtpHost = smtpHost
+        self.smtpPort = smtpPort
+        self.username = username
+        self.password = password
+        self.useSSL = useSSL
+        self.useTLS = useTLS
     }
 }
 

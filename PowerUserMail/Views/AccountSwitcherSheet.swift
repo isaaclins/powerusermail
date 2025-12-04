@@ -42,14 +42,20 @@ struct AccountSwitcherSheet: View {
                                     HStack(spacing: 12) {
                                         // Provider icon
                                         Group {
-                                            if account.provider == .gmail {
+                                            switch account.provider {
+                                            case .gmail:
                                                 Image("GmailLogo")
                                                     .resizable()
                                                     .scaledToFit()
-                                            } else {
+                                            case .outlook:
                                                 Image("OutlookLogo")
                                                     .resizable()
                                                     .scaledToFit()
+                                            case .imap:
+                                                Image(systemName: "server.rack")
+                                                    .resizable()
+                                                    .scaledToFit()
+                                                    .foregroundStyle(.secondary)
                                             }
                                         }
                                         .frame(width: 24, height: 24)
@@ -187,6 +193,36 @@ struct AccountSwitcherSheet: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(accountViewModel.isAuthenticating)
+                    
+                    // Custom IMAP button
+                    Button {
+                        Task {
+                            await accountViewModel.authenticate(provider: .imap)
+                        }
+                    } label: {
+                        VStack(spacing: 12) {
+                            Image(systemName: "server.rack")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 36, height: 36)
+                                .foregroundStyle(.secondary)
+                            
+                            Text("IMAP")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(.quaternary, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(accountViewModel.isAuthenticating)
                 }
             }
             
@@ -213,7 +249,10 @@ struct AccountSwitcherSheet: View {
             .padding(.bottom, 20)
         }
         .padding(.horizontal, 24)
-        .frame(width: 420, height: 520)
+        .frame(width: 420, height: 580)
+        .sheet(isPresented: $accountViewModel.showIMAPConfigSheet) {
+            IMAPConfigSheet(accountViewModel: accountViewModel)
+        }
     }
 }
 

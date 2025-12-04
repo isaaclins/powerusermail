@@ -39,12 +39,19 @@ final class InboxViewModel: ObservableObject {
     }
 
     func configure(service: MailService, myEmail: String) {
+        print("📥 InboxViewModel.configure called with email: \(myEmail), service type: \(type(of: service))")
+        
         // CRITICAL: Check if this is a different account or same account
         let isSameAccount = isConfigured && self.myEmail.lowercased() == myEmail.lowercased()
 
         // Skip ONLY if exact same account is already fully configured and loaded (and not requiring reauth)
         if isSameAccount && !conversations.isEmpty && !requiresReauthentication {
             print("✓ Same account already configured: \(myEmail)")
+            // Make sure polling is running even if already configured
+            if timer == nil {
+                print("⏰ Restarting polling for existing account")
+                startPolling()
+            }
             return
         }
 
@@ -79,10 +86,11 @@ final class InboxViewModel: ObservableObject {
         self.myEmail = myEmail
         self.isConfigured = true
 
-        // Start polling for new account
+        // Start polling for new account IMMEDIATELY
         startPolling()
 
-        // Initial load
+        // Initial load - trigger immediately
+        print("📧 Triggering initial inbox load for \(myEmail)")
         Task { await loadInbox() }
     }
 
@@ -118,13 +126,21 @@ final class InboxViewModel: ObservableObject {
 
     private func startPolling() {
         timer?.invalidate()
+        timer = nil
 
         print("⏰ Starting polling with interval: \(Int(currentPollingInterval))s")
 
-        timer = Timer.scheduledTimer(withTimeInterval: currentPollingInterval, repeats: true) {
-            [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.loadInbox()
+        // Schedule on main run loop to ensure it fires properly
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.timer = Timer.scheduledTimer(withTimeInterval: self.currentPollingInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.loadInbox()
+                }
+            }
+            // Add to common run loop mode to ensure it fires during UI interactions
+            if let timer = self.timer {
+                RunLoop.main.add(timer, forMode: .common)
             }
         }
     }
@@ -176,10 +192,18 @@ final class InboxViewModel: ObservableObject {
 
     func loadInbox() async {
         // Don't load if we're already loading, no service, or auth is broken
-        guard !isLoading, let service = service, !requiresReauthentication else {
-            if requiresReauthentication {
-                print("⛔ Skipping inbox load - re-authentication required")
-            }
+        guard !isLoading else {
+            print("⏸️ Skipping inbox load - already loading")
+            return
+        }
+        
+        guard let service = service else {
+            print("❌ Skipping inbox load - no service configured")
+            return
+        }
+        
+        guard !requiresReauthentication else {
+            print("⛔ Skipping inbox load - re-authentication required")
             return
         }
 

@@ -225,7 +225,14 @@ struct InboxView: View {
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
         .onAppear {
+            // Configure and load inbox when view appears
             viewModel.configure(service: service, myEmail: myEmail)
+        }
+        .task {
+            // Ensure inbox loads on first appear (handles app launch case)
+            if viewModel.conversations.isEmpty && !viewModel.isLoading {
+                await viewModel.loadInbox()
+            }
         }
     }
     
