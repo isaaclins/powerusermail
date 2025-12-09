@@ -15,6 +15,7 @@ struct ShowUnreadCommand: CommandPlugin {
     let iconSystemName = "envelope.badge"
     let iconColor: CommandIconColor = .purple
     let shortcut = "⌘1"
+    let showInPalette = false
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter1"), object: nil)
@@ -29,6 +30,7 @@ struct ShowAllCommand: CommandPlugin {
     let iconSystemName = "tray"
     let iconColor: CommandIconColor = .blue
     let shortcut = "⌘2"
+    let showInPalette = false
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter2"), object: nil)
@@ -43,6 +45,7 @@ struct ShowArchivedCommand: CommandPlugin {
     let iconSystemName = "archivebox"
     let iconColor: CommandIconColor = .gray
     let shortcut = "⌘3"
+    let showInPalette = false
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter3"), object: nil)

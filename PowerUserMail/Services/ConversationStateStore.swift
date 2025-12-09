@@ -8,10 +8,12 @@ final class ConversationStateStore: ObservableObject {
     @Published private(set) var pinnedConversationIDs: Set<String> = []
     @Published private(set) var mutedConversationIDs: Set<String> = []
     @Published private(set) var readConversationIDs: Set<String> = []
+    @Published private(set) var archivedConversationIDs: Set<String> = []
     
     private let pinnedKey = "pinnedConversations"
     private let mutedKey = "mutedConversations"
     private let readKey = "readConversations"
+    private let archivedKey = "archivedConversations"
     
     private init() {
         loadFromDefaults()
@@ -98,6 +100,31 @@ final class ConversationStateStore: ObservableObject {
         }
         saveToDefaults()
     }
+
+    // MARK: - Archived
+
+    func isArchived(conversationId: String) -> Bool {
+        archivedConversationIDs.contains(conversationId)
+    }
+
+    func archive(conversationId: String) {
+        archivedConversationIDs.insert(conversationId)
+        saveToDefaults()
+    }
+
+    func unarchive(conversationId: String) {
+        archivedConversationIDs.remove(conversationId)
+        saveToDefaults()
+    }
+
+    func toggleArchived(conversationId: String) {
+        if archivedConversationIDs.contains(conversationId) {
+            archivedConversationIDs.remove(conversationId)
+        } else {
+            archivedConversationIDs.insert(conversationId)
+        }
+        saveToDefaults()
+    }
     
     // MARK: - Persistence
     
@@ -111,12 +138,16 @@ final class ConversationStateStore: ObservableObject {
         if let read = UserDefaults.standard.array(forKey: readKey) as? [String] {
             readConversationIDs = Set(read)
         }
+        if let archived = UserDefaults.standard.array(forKey: archivedKey) as? [String] {
+            archivedConversationIDs = Set(archived)
+        }
     }
     
     private func saveToDefaults() {
         UserDefaults.standard.set(Array(pinnedConversationIDs), forKey: pinnedKey)
         UserDefaults.standard.set(Array(mutedConversationIDs), forKey: mutedKey)
         UserDefaults.standard.set(Array(readConversationIDs), forKey: readKey)
+        UserDefaults.standard.set(Array(archivedConversationIDs), forKey: archivedKey)
     }
 }
 

@@ -28,6 +28,7 @@ struct InboxView: View {
     @Binding var selectedConversation: Conversation?
     @State private var activeFilter: InboxFilter = .unread  // Demo shows Unread selected by default
     @State private var searchText = ""
+    @ObservedObject private var stateStore = ConversationStateStore.shared
 
     let service: MailService
     let myEmail: String
@@ -47,45 +48,56 @@ struct InboxView: View {
         self.onOpenCommandPalette = onOpenCommandPalette
     }
 
-    /// Conversations filtered by active filter/search, with pinned always visible and first
+    /// Conversations filtered by active filter/search, with pinned always visible and first (non-archived unless viewing Archived)
     private var filteredConversations: [Conversation] {
-        // Pinned should always show, regardless of filter
-        var pinned = viewModel.conversations.filter {
-            ConversationStateStore.shared.isPinned(conversationId: $0.id)
+        let stateStore = ConversationStateStore.shared
+
+        // Pinned non-archived always visible on top (all tabs except archived filter still show them)
+        var pinnedNonArchived = viewModel.conversations.filter {
+            stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
         }
-        if !searchText.isEmpty {
-            pinned = pinned.filter { conv in
-                conv.person.localizedCaseInsensitiveContains(searchText)
-                    || conv.messages.contains {
-                        $0.subject.localizedCaseInsensitiveContains(searchText)
-                    }
-            }
+        // Archived pinned (only in archived view)
+        var pinnedArchived = viewModel.conversations.filter {
+            stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
         }
 
-        // Non-pinned filtered by current view
+        // Non-pinned filtered by view
         var nonPinned: [Conversation]
         switch activeFilter {
         case .all:
-            nonPinned = viewModel.conversations
+            nonPinned = viewModel.conversations.filter {
+                !stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
+            }
         case .unread:
-            nonPinned = viewModel.conversations.filter { $0.hasUnread }
+            nonPinned = viewModel.conversations.filter {
+                !stateStore.isPinned(conversationId: $0.id)
+                    && !stateStore.isArchived(conversationId: $0.id)
+                    && $0.hasUnread
+            }
         case .archived:
-            // TODO: Implement archived state tracking
-            nonPinned = []
-        }
-        nonPinned = nonPinned.filter {
-            !ConversationStateStore.shared.isPinned(conversationId: $0.id)
-        }
-        if !searchText.isEmpty {
-            nonPinned = nonPinned.filter { conv in
-                conv.person.localizedCaseInsensitiveContains(searchText)
-                    || conv.messages.contains {
-                        $0.subject.localizedCaseInsensitiveContains(searchText)
-                    }
+            nonPinned = viewModel.conversations.filter {
+                !stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
             }
         }
 
-        return pinned + nonPinned
+        // Apply search filter to each slice
+        func applySearch(_ list: [Conversation]) -> [Conversation] {
+            guard !searchText.isEmpty else { return list }
+            return list.filter { conv in
+                conv.person.localizedCaseInsensitiveContains(searchText)
+                    || conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
+            }
+        }
+
+        pinnedNonArchived = applySearch(pinnedNonArchived)
+        pinnedArchived = applySearch(pinnedArchived)
+        nonPinned = applySearch(nonPinned)
+
+        if activeFilter == .archived {
+            return pinnedArchived + nonPinned
+        } else {
+            return pinnedNonArchived + nonPinned
+        }
     }
 
     var body: some View {
@@ -104,6 +116,8 @@ struct InboxView: View {
                             isSelected: selectedConversation?.id == conversation.id,
                             displayName: displayName(for: conversation.person),
                             showPinIcon: ConversationStateStore.shared.isPinned(
+                                conversationId: conversation.id),
+                            showArchiveIcon: ConversationStateStore.shared.isArchived(
                                 conversationId: conversation.id)
                         )
                         .contentShape(Rectangle())
@@ -394,6 +408,7 @@ struct ConversationRow: View {
     let isSelected: Bool
     let displayName: String
     var showPinIcon: Bool = false
+    var showArchiveIcon: Bool = false
 
     @State private var isHovered = false
     @ObservedObject private var stateStore = ConversationStateStore.shared
@@ -445,6 +460,11 @@ struct ConversationRow: View {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.orange)
+                    }
+                    if showArchiveIcon {
+                        Image(systemName: "archivebox")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
@@ -542,9 +562,14 @@ struct ConversationRow: View {
             Divider()
 
             Button {
-                // TODO: Implement archive via API
+                ConversationStateStore.shared.toggleArchived(conversationId: conversation.id)
             } label: {
-                Label("Archive", systemImage: "archivebox")
+                Label(
+                    ConversationStateStore.shared.isArchived(conversationId: conversation.id)
+                        ? "Move to Inbox" : "Archive",
+                    systemImage: ConversationStateStore.shared.isArchived(conversationId: conversation.id)
+                        ? "tray.and.arrow.up" : "archivebox"
+                )
             }
 
             Button(role: .destructive) {

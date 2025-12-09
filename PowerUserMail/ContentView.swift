@@ -261,7 +261,8 @@ struct ContentView: View {
                 CommandAction(
                     title: "Reply to Chat", keywords: ["reply", "respond", "answer"],
                     iconSystemName: "arrowshape.turn.up.left",
-                    isContextual: true
+                    isContextual: true,
+                    showInPalette: true
                 ) {
                     openReply()
                 }, at: 0
@@ -281,8 +282,7 @@ struct ContentView: View {
     
     private func archiveCurrentConversation() {
         guard let conversation = selectedConversation else { return }
-        // TODO: Implement actual archive API call
-        // For now, just clear selection (simulating moving to archive)
+        ConversationStateStore.shared.archive(conversationId: conversation.id)
         selectedConversation = nil
         print("Archived conversation: \(conversation.person)")
     }

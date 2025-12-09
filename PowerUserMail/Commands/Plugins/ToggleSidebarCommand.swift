@@ -14,7 +14,7 @@ struct ToggleSidebarCommand: CommandPlugin {
     let keywords = ["toggle", "sidebar", "panel", "hide", "show", "collapse", "expand", "menu", "navigation", "ts"]
     let iconSystemName = "sidebar.left"
     let iconColor: CommandIconColor = .purple
-    let shortcut = "⌘\\"
+    let shortcut = "⌘s"
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("ToggleSidebar"), object: nil)

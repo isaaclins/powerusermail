@@ -32,6 +32,9 @@ protocol CommandPlugin {
     
     /// Keyboard shortcut display (e.g., "⌘N")
     var shortcut: String { get }
+
+    /// Whether to show in the command palette (still available for shortcuts if false)
+    var showInPalette: Bool { get }
     
     /// Whether the command is currently available
     var isEnabled: Bool { get }
@@ -52,6 +55,7 @@ extension CommandPlugin {
     var iconColor: CommandIconColor { .purple }
     var shortcut: String { "" }
     var isContextual: Bool { false }
+    var showInPalette: Bool { true }
 }
 
 /// Central registry for all commands
@@ -97,6 +101,7 @@ final class CommandRegistry: ObservableObject {
         keywords: [String] = [],
         iconSystemName: String = "command",
         isEnabled: Bool = true,
+        showInPalette: Bool = true,
         action: @escaping () -> Void
     ) {
         let command = CommandAction(
@@ -105,6 +110,7 @@ final class CommandRegistry: ObservableObject {
             keywords: keywords,
             iconSystemName: iconSystemName,
             isEnabled: isEnabled,
+            showInPalette: showInPalette,
             perform: action
         )
         commands.append(command)
@@ -112,7 +118,8 @@ final class CommandRegistry: ObservableObject {
     
     /// Get all commands for the command palette
     func getCommands(hasSelectedConversation: Bool = false) -> [CommandAction] {
-        let filtered = hasSelectedConversation ? commands : commands.filter { !$0.isContextual }
+        let visible = commands.filter { $0.showInPalette }
+        let filtered = hasSelectedConversation ? visible : visible.filter { !$0.isContextual }
         print("\n🔍 getCommands(hasSelectedConversation: \(hasSelectedConversation)) - returning \(filtered.count) commands:")
         for cmd in filtered {
             print("  📌 \"\(cmd.title)\" keywords=\(cmd.keywords)")
@@ -155,6 +162,7 @@ final class CommandRegistry: ObservableObject {
                 shortcut: plugin.shortcut,
                 isEnabled: plugin.isEnabled,
                 isContextual: plugin.isContextual,
+                showInPalette: plugin.showInPalette,
                 perform: plugin.execute
             )
             newCommands.append(action)

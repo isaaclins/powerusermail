@@ -11,6 +11,7 @@ struct CommandAction: Identifiable {
     let perform: () -> Void
     var isEnabled: Bool
     var isContextual: Bool
+    var showInPalette: Bool
 
     init(
         id: UUID = UUID(), 
@@ -22,6 +23,7 @@ struct CommandAction: Identifiable {
         shortcut: String = "",
         isEnabled: Bool = true, 
         isContextual: Bool = false, 
+        showInPalette: Bool = true,
         perform: @escaping () -> Void
     ) {
         self.id = id
@@ -34,6 +36,7 @@ struct CommandAction: Identifiable {
         self.perform = perform
         self.isEnabled = isEnabled
         self.isContextual = isContextual
+        self.showInPalette = showInPalette
     }
 }
 
