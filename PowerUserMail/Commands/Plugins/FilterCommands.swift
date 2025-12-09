@@ -48,17 +48,3 @@ struct ShowArchivedCommand: CommandPlugin {
         NotificationCenter.default.post(name: Notification.Name("InboxFilter3"), object: nil)
     }
 }
-
-struct ShowPinnedCommand: CommandPlugin {
-    let id = "show-pinned"
-    let title = "Show Pinned"
-    let subtitle = "View pinned conversations"
-    let keywords = ["show", "pinned", "pin", "filter", "favorite", "starred", "important", "sp"]
-    let iconSystemName = "pin.fill"
-    let iconColor: CommandIconColor = .orange
-    let shortcut = "⌘4"
-    
-    func execute() {
-        NotificationCenter.default.post(name: Notification.Name("InboxFilter4"), object: nil)
-    }
-}

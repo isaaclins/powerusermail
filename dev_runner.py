@@ -15,15 +15,13 @@ current_process = None
 def build():
     print("🔨 Building...")
     # Using -quiet to reduce noise, but we capture stderr to show errors
-    # Explicitly set -project and -sdk to avoid "Supported platforms for the buildables in the current scheme is empty" error
     result = subprocess.run(
         [
             "xcodebuild",
             "-project", "PowerUserMail.xcodeproj",
             "-scheme", PROJECT_SCHEME,
             "-configuration", "Debug",
-            "-destination", "platform=macOS,arch=arm64",
-            "-sdk", "macosx",
+            "-destination", "generic/platform=macOS",
             "-derivedDataPath", "build",
             "-quiet"
         ],

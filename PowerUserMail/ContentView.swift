@@ -37,24 +37,34 @@ struct ContentView: View {
                 }
             }
         }
-        .overlay(alignment: .center) {
+        .overlay {
             if isShowingCommandPalette {
-                CommandPaletteView(
-                    isPresented: $isShowingCommandPalette,
-                    searchText: $commandSearch,
-                    actions: commandActions,
-                    conversations: inboxViewModel.conversations,
-                    onSelect: { action in
-                        commandSearch = ""
-                        action.perform()
-                    },
-                    onSelectConversation: { conversation in
-                        commandSearch = ""
-                        selectedConversation = conversation
-                    }
-                )
-                .frame(maxWidth: 500)
-                .transition(.scale.combined(with: .opacity))
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            isShowingCommandPalette = false
+                        }
+                    
+                    CommandPaletteView(
+                        isPresented: $isShowingCommandPalette,
+                        searchText: $commandSearch,
+                        actions: commandActions,
+                        conversations: inboxViewModel.conversations,
+                        onSelect: { action in
+                            commandSearch = ""
+                            action.perform()
+                        },
+                        onSelectConversation: { conversation in
+                            commandSearch = ""
+                            selectedConversation = conversation
+                        }
+                    )
+                    .frame(maxWidth: 500)
+                }
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
             }
         }
         .sheet(isPresented: $isShowingCompose) {

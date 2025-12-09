@@ -55,7 +55,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 @main
 struct PowerUserMailApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @ObservedObject private var commandRegistry = CommandRegistry.shared
     let persistenceController = PersistenceController.shared
+
+    init() {
+        // Ensure plugins (and their shortcuts) are loaded before building the menu
+        CommandLoader.loadAll()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -70,44 +76,49 @@ struct PowerUserMailApp: App {
                 }
                 .keyboardShortcut("k", modifiers: [.command])
 
-                Button("New Email") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("OpenCompose"), object: nil)
-                }
-                .keyboardShortcut("n", modifiers: [.command])
-                
-                Button("Toggle Sidebar") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("ToggleSidebar"), object: nil)
-                }
-                .keyboardShortcut("s", modifiers: [.command])
-                
                 Divider()
-                
-                Button("Show Unread") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter1"), object: nil)
+
+                ForEach(shortcutActions) { action in
+                    if let shortcut = parseShortcut(action.shortcut) {
+                        Button(action.title) { action.perform() }
+                            .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+                    }
                 }
-                .keyboardShortcut("1", modifiers: [.command])
-                
-                Button("Show All") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter2"), object: nil)
-                }
-                .keyboardShortcut("2", modifiers: [.command])
-                
-                Button("Show Archived") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter3"), object: nil)
-                }
-                .keyboardShortcut("3", modifiers: [.command])
-                
-                Button("Show Pinned") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter4"), object: nil)
-                }
-                .keyboardShortcut("4", modifiers: [.command])
             }
         }
+    }
+
+    /// Build a list of actions that have valid shortcuts defined in plugins/registry.
+    private var shortcutActions: [CommandAction] {
+        commandRegistry.commands.filter { !$0.shortcut.isEmpty }
+    }
+
+    /// Parse a human-readable shortcut string (e.g., "⌘⇧R") into SwiftUI key equivalents.
+    private func parseShortcut(_ string: String) -> (key: KeyEquivalent, modifiers: EventModifiers)? {
+        var modifiers: EventModifiers = []
+        var keyChar: Character?
+
+        for ch in string {
+            switch ch {
+            case "⌘": modifiers.insert(.command)
+            case "⇧": modifiers.insert(.shift)
+            case "⌥": modifiers.insert(.option)
+            case "⌃": modifiers.insert(.control)
+            default:
+                keyChar = ch
+            }
+        }
+
+        guard let keyChar else { return nil }
+
+        let key: KeyEquivalent
+        switch keyChar {
+        case "\\":
+            key = KeyEquivalent("\\")
+        default:
+            key = KeyEquivalent(String(keyChar).lowercased().first ?? keyChar)
+        }
+
+        return (key: key, modifiers: modifiers)
     }
 }

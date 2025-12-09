@@ -47,15 +47,14 @@ struct InboxView: View {
         self.onOpenCommandPalette = onOpenCommandPalette
     }
 
-    /// Pinned conversations - always shown at top
-    private var pinnedConversations: [Conversation] {
-        var conversations = viewModel.conversations.filter {
+    /// Conversations filtered by active filter/search, with pinned always visible and first
+    private var filteredConversations: [Conversation] {
+        // Pinned should always show, regardless of filter
+        var pinned = viewModel.conversations.filter {
             ConversationStateStore.shared.isPinned(conversationId: $0.id)
         }
-
-        // Apply search filter to pinned too
         if !searchText.isEmpty {
-            conversations = conversations.filter { conv in
+            pinned = pinned.filter { conv in
                 conv.person.localizedCaseInsensitiveContains(searchText)
                     || conv.messages.contains {
                         $0.subject.localizedCaseInsensitiveContains(searchText)
@@ -63,31 +62,22 @@ struct InboxView: View {
             }
         }
 
-        return conversations
-    }
-
-    /// Regular (non-pinned) conversations based on current filter
-    private var filteredConversations: [Conversation] {
-        var conversations: [Conversation]
-
+        // Non-pinned filtered by current view
+        var nonPinned: [Conversation]
         switch activeFilter {
         case .all:
-            conversations = viewModel.conversations
+            nonPinned = viewModel.conversations
         case .unread:
-            conversations = viewModel.conversations.filter { $0.hasUnread }
+            nonPinned = viewModel.conversations.filter { $0.hasUnread }
         case .archived:
             // TODO: Implement archived state tracking
-            conversations = []
+            nonPinned = []
         }
-
-        // Exclude pinned conversations (they're shown separately)
-        conversations = conversations.filter {
+        nonPinned = nonPinned.filter {
             !ConversationStateStore.shared.isPinned(conversationId: $0.id)
         }
-
-        // Apply search filter
         if !searchText.isEmpty {
-            conversations = conversations.filter { conv in
+            nonPinned = nonPinned.filter { conv in
                 conv.person.localizedCaseInsensitiveContains(searchText)
                     || conv.messages.contains {
                         $0.subject.localizedCaseInsensitiveContains(searchText)
@@ -95,7 +85,7 @@ struct InboxView: View {
             }
         }
 
-        return conversations
+        return pinned + nonPinned
     }
 
     var body: some View {
@@ -108,51 +98,21 @@ struct InboxView: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    // PINNED SECTION - Always visible at top
-                    if !pinnedConversations.isEmpty {
-                        ForEach(pinnedConversations) { conversation in
-                            ConversationRow(
-                                conversation: conversation,
-                                isSelected: selectedConversation?.id == conversation.id,
-                                displayName: displayName(for: conversation.person),
-                                showPinIcon: true
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    viewModel.select(conversation: conversation)
-                                    selectedConversation = conversation
-                                    ConversationStateStore.shared.markAsRead(
-                                        conversationId: conversation.id)
-                                }
-                            }
-                        }
-
-                        // Separator line
-                        HStack {
-                            Rectangle()
-                                .fill(Color.secondary.opacity(0.3))
-                                .frame(height: 1)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                    }
-
-                    // REGULAR CONVERSATIONS
                     ForEach(filteredConversations) { conversation in
                         ConversationRow(
                             conversation: conversation,
                             isSelected: selectedConversation?.id == conversation.id,
                             displayName: displayName(for: conversation.person),
-                            showPinIcon: false
+                            showPinIcon: ConversationStateStore.shared.isPinned(
+                                conversationId: conversation.id)
                         )
                         .contentShape(Rectangle())
                         .onTapGesture {
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 viewModel.select(conversation: conversation)
                                 selectedConversation = conversation
-                                ConversationStateStore.shared.markAsRead(
-                                    conversationId: conversation.id)
+                        ConversationStateStore.shared.markAsRead(
+                            conversationId: conversation.id)
                             }
                         }
                     }
