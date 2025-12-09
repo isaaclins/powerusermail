@@ -562,7 +562,13 @@ struct ConversationRow: View {
             Divider()
 
             Button {
-                ConversationStateStore.shared.toggleArchived(conversationId: conversation.id)
+                NotificationCenter.default.post(
+                    name: Notification.Name("ArchiveConversationById"),
+                    object: nil,
+                    userInfo: [
+                        "id": conversation.id,
+                        "archive": !ConversationStateStore.shared.isArchived(conversationId: conversation.id)
+                    ])
             } label: {
                 Label(
                     ConversationStateStore.shared.isArchived(conversationId: conversation.id)
