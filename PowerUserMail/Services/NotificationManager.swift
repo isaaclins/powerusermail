@@ -14,6 +14,7 @@ final class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
 
     @Published private(set) var isAuthorized = false
+    @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private var knownMessageIDs: Set<String> = []
     private var hasInitialized = false
     private var isInitialLoad = true  // Track if we're still in initial load phase
@@ -21,7 +22,7 @@ final class NotificationManager: ObservableObject {
 
     private init() {
         Task {
-            await requestAuthorization()
+            await refreshAuthorizationStatus()
         }
     }
 
@@ -41,6 +42,27 @@ final class NotificationManager: ObservableObject {
             }
         } catch {
             print("❌ Notification authorization error: \(error)")
+        }
+
+        await refreshAuthorizationStatus()
+    }
+
+    func refreshAuthorizationStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        authorizationStatus = settings.authorizationStatus
+
+        let allowedStatuses: [UNAuthorizationStatus] = [.authorized, .provisional, .ephemeral]
+        isAuthorized = allowedStatuses.contains(settings.authorizationStatus)
+
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            print("🔔 Notification permissions: \(settings.authorizationStatus.rawValue)")
+        case .denied:
+            print("❌ Notifications denied at system level")
+        case .notDetermined:
+            print("ℹ️ Notification permission not determined")
+        @unknown default:
+            print("⚠️ Unknown notification authorization status: \(settings.authorizationStatus.rawValue)")
         }
     }
 

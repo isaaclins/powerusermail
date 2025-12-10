@@ -34,6 +34,7 @@ struct CommandLoader {
         ShowAllCommand(),
         ShowUnreadCommand(),
         ShowArchivedCommand(),
+        TestMarkAllAsUnreadCommand(),
         
         // Conversation actions (contextual - only shown when chat is selected)
         ArchiveConversationCommand(),

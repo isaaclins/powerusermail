@@ -1,15 +1,18 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Inbox Filter (Demo has only 3 filters)
 enum InboxFilter: String, CaseIterable {
-    case unread = "Unread"
     case all = "All"
+    case unread = "Unread"
     case archived = "Archived"
 
     var shortcutNumber: Int {
         switch self {
-        case .unread: return 1
-        case .all: return 2
+        case .all: return 1
+        case .unread: return 2
         case .archived: return 3
         }
     }
@@ -29,6 +32,7 @@ struct InboxView: View {
     @State private var activeFilter: InboxFilter = .unread  // Demo shows Unread selected by default
     @State private var searchText = ""
     @ObservedObject private var stateStore = ConversationStateStore.shared
+    @StateObject private var notificationManager = NotificationManager.shared
 
     let service: MailService
     let myEmail: String
@@ -48,39 +52,12 @@ struct InboxView: View {
         self.onOpenCommandPalette = onOpenCommandPalette
     }
 
-    /// Conversations filtered by active filter/search, with pinned always visible and first (non-archived unless viewing Archived)
+    /// Conversations filtered by active filter/search, with pinned always visible and first
     private var filteredConversations: [Conversation] {
         let stateStore = ConversationStateStore.shared
 
-        // Pinned non-archived always visible on top (all tabs except archived filter still show them)
-        var pinnedNonArchived = viewModel.conversations.filter {
-            stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
-        }
-        // Archived pinned (only in archived view)
-        var pinnedArchived = viewModel.conversations.filter {
-            stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
-        }
+        let conversations = viewModel.conversations
 
-        // Non-pinned filtered by view
-        var nonPinned: [Conversation]
-        switch activeFilter {
-        case .all:
-            nonPinned = viewModel.conversations.filter {
-                !stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
-            }
-        case .unread:
-            nonPinned = viewModel.conversations.filter {
-                !stateStore.isPinned(conversationId: $0.id)
-                    && !stateStore.isArchived(conversationId: $0.id)
-                    && $0.hasUnread
-            }
-        case .archived:
-            nonPinned = viewModel.conversations.filter {
-                !stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
-            }
-        }
-
-        // Apply search filter to each slice
         func applySearch(_ list: [Conversation]) -> [Conversation] {
             guard !searchText.isEmpty else { return list }
             return list.filter { conv in
@@ -89,19 +66,53 @@ struct InboxView: View {
             }
         }
 
-        pinnedNonArchived = applySearch(pinnedNonArchived)
+        // Base groups
+        var pinnedAll = conversations.filter { stateStore.isPinned(conversationId: $0.id) }
+        var pinnedArchived = conversations.filter {
+            stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
+        }
+        var pinnedNonArchived = conversations.filter {
+            stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
+        }
+
+        // Non-pinned groups
+        var nonPinnedAll = conversations.filter { !stateStore.isPinned(conversationId: $0.id) }
+        var nonPinnedArchived = conversations.filter {
+            !stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
+        }
+        var nonPinnedUnread = conversations.filter {
+            !stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id) && $0.hasUnread
+        }
+
+        // Apply search
+        pinnedAll = applySearch(pinnedAll)
         pinnedArchived = applySearch(pinnedArchived)
-        nonPinned = applySearch(nonPinned)
+        pinnedNonArchived = applySearch(pinnedNonArchived)
+        nonPinnedAll = applySearch(nonPinnedAll)
+        nonPinnedArchived = applySearch(nonPinnedArchived)
+        nonPinnedUnread = applySearch(nonPinnedUnread)
 
         if activeFilter == .archived {
-            return pinnedArchived + nonPinned
+            return pinnedArchived + nonPinnedArchived
+        } else if activeFilter == .unread {
+            // Only include unread pinned that are not archived
+            let pinnedUnread = pinnedNonArchived.filter { $0.hasUnread }
+            return pinnedUnread + nonPinnedUnread
         } else {
-            return pinnedNonArchived + nonPinned
+            // All: show everything (archived and non-archived), pinned first
+            return pinnedAll + nonPinnedAll
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            if notificationManager.authorizationStatus == .denied {
+                notificationPermissionBanner
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // Search bar (like demo)
             searchBar
 
@@ -132,6 +143,16 @@ struct InboxView: View {
                     }
                 }
             }
+        }
+        .focusable(true)
+        .focusEffectDisabled(true)
+        .onKeyPress(.downArrow) {
+            moveSelection(1)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            moveSelection(-1)
+            return .handled
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.isLoading && !viewModel.conversations.isEmpty {
@@ -216,6 +237,16 @@ struct InboxView: View {
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsUnread"))) {
+            _ in
+            let allIds = viewModel.conversations.map { $0.id }
+            ConversationStateStore.shared.markAllAsUnread(conversationIds: allIds)
+        }
+#if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await notificationManager.refreshAuthorizationStatus() }
+        }
+#endif
         .onAppear {
             // Configure and load inbox when view appears
             viewModel.configure(service: service, myEmail: myEmail)
@@ -225,6 +256,64 @@ struct InboxView: View {
             if viewModel.conversations.isEmpty && !viewModel.isLoading {
                 await viewModel.loadInbox()
             }
+        }
+    }
+
+    // MARK: - Notification permission banner
+    private var notificationPermissionBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bell.slash")
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notifications are disabled")
+                    .font(.callout.weight(.semibold))
+                Text("Enable macOS notifications to get alerts for new mail.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+#if os(macOS)
+            Button("Open Settings") {
+                openNotificationSettings()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+#endif
+        }
+        .padding(12)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+    }
+
+#if os(macOS)
+    private func openNotificationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
+        NSWorkspace.shared.open(url)
+    }
+#endif
+
+    /// Move selection with keyboard arrows (only when this view has focus)
+    private func moveSelection(_ delta: Int) {
+        let items = filteredConversations
+        guard !items.isEmpty else { return }
+
+        let currentIndex = items.firstIndex(where: { $0.id == selectedConversation?.id })
+        let targetIndex: Int
+        if let currentIndex {
+            targetIndex = max(0, min(items.count - 1, currentIndex + delta))
+        } else {
+            targetIndex = delta >= 0 ? 0 : items.count - 1
+        }
+
+        let target = items[targetIndex]
+        withAnimation(.easeInOut(duration: 0.15)) {
+            viewModel.select(conversation: target)
+            selectedConversation = target
+            ConversationStateStore.shared.markAsRead(conversationId: target.id)
         }
     }
 

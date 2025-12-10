@@ -14,7 +14,7 @@ struct ShowUnreadCommand: CommandPlugin {
     let keywords = ["show", "unread", "filter", "new", "unseen", "inbox", "su"]
     let iconSystemName = "envelope.badge"
     let iconColor: CommandIconColor = .purple
-    let shortcut = "⌘1"
+    let shortcut = "⌘2"
     let showInPalette = false
     
     func execute() {
@@ -29,7 +29,7 @@ struct ShowAllCommand: CommandPlugin {
     let keywords = ["show", "all", "messages", "filter", "everything", "inbox", "clear", "reset", "sam"]
     let iconSystemName = "tray"
     let iconColor: CommandIconColor = .blue
-    let shortcut = "⌘2"
+    let shortcut = "⌘1"
     let showInPalette = false
     
     func execute() {

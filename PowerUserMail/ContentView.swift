@@ -291,8 +291,9 @@ struct ContentView: View {
     
     private func archiveCurrentConversation() {
         guard let conversation = selectedConversation else { return }
-        handleArchiveToggle(conversationId: conversation.id, archive: true)
-        print("Archived conversation: \(conversation.person)")
+        let shouldArchive = !stateStore.isArchived(conversationId: conversation.id)
+        handleArchiveToggle(conversationId: conversation.id, archive: shouldArchive)
+        print("\(shouldArchive ? "Archived" : "Unarchived") conversation: \(conversation.person)")
     }
     
     private func pinCurrentConversation() {

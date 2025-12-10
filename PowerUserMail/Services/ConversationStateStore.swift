@@ -86,6 +86,13 @@ final class ConversationStateStore: ObservableObject {
         }
         saveToDefaults()
     }
+
+    func markAllAsUnread(conversationIds: [String]) {
+        for id in conversationIds {
+            readConversationIDs.remove(id)
+        }
+        saveToDefaults()
+    }
     
     func markAsUnread(conversationId: String) {
         readConversationIDs.remove(conversationId)

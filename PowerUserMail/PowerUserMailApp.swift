@@ -17,7 +17,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // Initialize notification manager
         Task { @MainActor in
-            await NotificationManager.shared.requestAuthorization()
+            await NotificationManager.shared.refreshAuthorizationStatus()
+
+            if NotificationManager.shared.authorizationStatus == .notDetermined {
+                await NotificationManager.shared.requestAuthorization()
+            }
         }
     }
     
