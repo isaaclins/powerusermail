@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SettingsView: View {
+struct OnboardingConnectView: View {
     @ObservedObject var accountViewModel: AccountViewModel
 
     var body: some View {

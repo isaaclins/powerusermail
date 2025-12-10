@@ -60,6 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 struct PowerUserMailApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @ObservedObject private var commandRegistry = CommandRegistry.shared
+    @StateObject private var accountViewModel = AccountViewModel()
+    @StateObject private var inboxViewModel = InboxViewModel()
+    @StateObject private var settingsStore = SettingsStore()
     let persistenceController = PersistenceController.shared
 
     init() {
@@ -71,6 +74,9 @@ struct PowerUserMailApp: App {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(accountViewModel)
+                .environmentObject(inboxViewModel)
+                .environmentObject(settingsStore)
         }
         .commands {
             CommandMenu("Actions") {
@@ -89,6 +95,13 @@ struct PowerUserMailApp: App {
                     }
                 }
             }
+        }
+
+        Settings {
+            SettingsWindowView()
+                .environmentObject(settingsStore)
+                .environmentObject(accountViewModel)
+                .environmentObject(inboxViewModel)
         }
     }
 

@@ -9,8 +9,9 @@ import CoreData
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var accountViewModel = AccountViewModel()
-    @StateObject private var inboxViewModel = InboxViewModel()
+    @EnvironmentObject var accountViewModel: AccountViewModel
+    @EnvironmentObject var inboxViewModel: InboxViewModel
+    @EnvironmentObject var settingsStore: SettingsStore
     @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
     @State private var isShowingAccountSwitcher = false
@@ -160,7 +161,7 @@ struct ContentView: View {
     }
 
     private var onboardingView: some View {
-        SettingsView(accountViewModel: accountViewModel)
+        OnboardingConnectView(accountViewModel: accountViewModel)
     }
 
     private func mainSplitView(service: MailService) -> some View {
@@ -369,6 +370,9 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().environment(
-        \.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
+        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environmentObject(AccountViewModel())
+        .environmentObject(InboxViewModel())
+        .environmentObject(SettingsStore())
 }

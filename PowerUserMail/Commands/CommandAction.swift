@@ -7,7 +7,7 @@ struct CommandAction: Identifiable {
     let keywords: [String]
     let iconSystemName: String
     let iconColor: CommandIconColor
-    let shortcut: String
+    var shortcut: String
     let perform: () -> Void
     var isEnabled: Bool
     var isContextual: Bool

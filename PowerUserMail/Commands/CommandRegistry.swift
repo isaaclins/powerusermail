@@ -115,6 +115,17 @@ final class CommandRegistry: ObservableObject {
         )
         commands.append(command)
     }
+
+    /// Apply user-defined shortcut overrides by command title.
+    func applyShortcutOverrides(_ overrides: [String: String]) {
+        commands = commands.map { action in
+            var updated = action
+            if let override = overrides[action.title] {
+                updated.shortcut = override
+            }
+            return updated
+        }
+    }
     
     /// Get all commands for the command palette
     func getCommands(hasSelectedConversation: Bool = false) -> [CommandAction] {

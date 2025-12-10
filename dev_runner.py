@@ -13,8 +13,7 @@ SOURCE_DIR = "PowerUserMail"
 current_process = None
 
 def build():
-    print("🔨 Building...")
-    # Using -quiet to reduce noise, but we capture stderr to show errors
+    print("🔨 Building (verbose)...")
     result = subprocess.run(
         [
             "xcodebuild",
@@ -23,16 +22,15 @@ def build():
             "-configuration", "Debug",
             "-destination", "generic/platform=macOS",
             "-derivedDataPath", "build",
-            "-quiet"
         ],
         capture_output=True,
         text=True
     )
     if result.returncode != 0:
         print("❌ Build failed:")
-        print(result.stderr)
-        # Also print stdout if stderr is empty, sometimes errors are there
-        if not result.stderr:
+        if result.stderr:
+            print(result.stderr)
+        if result.stdout:
             print(result.stdout)
         return False
     print("✅ Build succeeded.")

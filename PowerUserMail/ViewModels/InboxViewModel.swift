@@ -25,6 +25,7 @@ final class InboxViewModel: ObservableObject {
     // Adaptive polling configuration
     private var basePollingInterval: TimeInterval = 60  // 60 seconds base (was 15)
     private var currentPollingInterval: TimeInterval = 60
+    private var pollingMode: PollingMode = .auto
     private let maxPollingInterval: TimeInterval = 300  // 5 minutes max backoff
     private var consecutiveSuccesses = 0
     private var isRateLimited = false
@@ -36,6 +37,29 @@ final class InboxViewModel: ObservableObject {
         ) { [weak self] _ in
             self?.reload()
         }
+
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("SettingsPollingModeChanged"), object: nil, queue: .main
+        ) { [weak self] notification in
+            if let raw = notification.userInfo?["mode"] as? String,
+               let mode = PollingMode(rawValue: raw) {
+                self?.applyPollingMode(mode)
+            }
+        }
+    }
+
+    private func applyPollingMode(_ mode: PollingMode) {
+        pollingMode = mode
+        switch mode {
+        case .auto:
+            basePollingInterval = 60
+        case .normal:
+            basePollingInterval = 60
+        case .lowPower:
+            basePollingInterval = 180
+        }
+        currentPollingInterval = basePollingInterval
+        startPolling()
     }
 
     func configure(service: MailService, myEmail: String) {
