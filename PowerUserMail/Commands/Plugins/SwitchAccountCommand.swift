@@ -14,7 +14,7 @@ struct SwitchAccountCommand: CommandPlugin {
     let keywords = ["switch", "account", "settings", "preferences", "change", "profile", "user", "sa"]
     let iconSystemName = "person.crop.circle"
     let iconColor: CommandIconColor = .blue
-    let shortcut = "⌘,"
+    let shortcut = ""
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("ShowAccountSwitcher"), object: nil)
