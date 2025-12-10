@@ -51,7 +51,7 @@ final class NotificationManager: ObservableObject {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
 
-        let allowedStatuses: [UNAuthorizationStatus] = [.authorized, .provisional, .ephemeral]
+        let allowedStatuses: [UNAuthorizationStatus] = [.authorized, .provisional,]
         isAuthorized = allowedStatuses.contains(settings.authorizationStatus)
 
         switch settings.authorizationStatus {

@@ -1,6 +1,9 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+import UserNotifications
+#else
+import UserNotifications
 #endif
 
 // MARK: - Inbox Filter (Demo has only 3 filters)
