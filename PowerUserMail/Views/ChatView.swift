@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AppKit
 
 struct ChatView: View {
     let conversation: Conversation
@@ -602,6 +603,7 @@ struct ScrollTransparentWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         let webView = ScrollPassthroughWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
 
         // Disable all scrolling on the WebView itself
@@ -620,7 +622,7 @@ struct ScrollTransparentWebView: NSViewRepresentable {
         Coordinator(self)
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var parent: ScrollTransparentWebView
 
         init(_ parent: ScrollTransparentWebView) {
@@ -636,6 +638,45 @@ struct ScrollTransparentWebView: NSViewRepresentable {
                         self?.parent.contentHeight = max(height + 20, 50)
                     }
                 }
+            }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            if navigationAction.navigationType == .linkActivated,
+               let url = navigationAction.request.url,
+               shouldOpenExternally(url: url) {
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Handles target="_blank" links.
+            if let url = navigationAction.request.url, shouldOpenExternally(url: url) {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
+        }
+
+        private func shouldOpenExternally(url: URL) -> Bool {
+            guard let scheme = url.scheme?.lowercased() else { return false }
+            switch scheme {
+            case "http", "https", "mailto", "tel":
+                return true
+            default:
+                return false
             }
         }
     }

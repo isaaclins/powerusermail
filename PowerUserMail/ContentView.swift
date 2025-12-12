@@ -9,9 +9,8 @@ import CoreData
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var accountViewModel: AccountViewModel
-    @EnvironmentObject var inboxViewModel: InboxViewModel
-    @EnvironmentObject var settingsStore: SettingsStore
+    @StateObject private var accountViewModel = AccountViewModel()
+    @StateObject private var inboxViewModel = InboxViewModel()
     @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
     @State private var isShowingAccountSwitcher = false
@@ -20,7 +19,6 @@ struct ContentView: View {
     @State private var commandActions: [CommandAction] = []
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isTogglingsidebar = false
-    private let stateStore = ConversationStateStore.shared
 
     var body: some View {
         Group {
@@ -100,14 +98,6 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ArchiveCurrentConversation"))) { _ in
             archiveCurrentConversation()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ArchiveConversationById"))) { notification in
-            guard
-                let userInfo = notification.userInfo,
-                let id = userInfo["id"] as? String,
-                let archive = userInfo["archive"] as? Bool
-            else { return }
-            handleArchiveToggle(conversationId: id, archive: archive)
-        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PinCurrentConversation"))) { _ in
             pinCurrentConversation()
         }
@@ -161,7 +151,7 @@ struct ContentView: View {
     }
 
     private var onboardingView: some View {
-        OnboardingConnectView(accountViewModel: accountViewModel)
+        SettingsView(accountViewModel: accountViewModel)
     }
 
     private func mainSplitView(service: MailService) -> some View {
@@ -271,8 +261,7 @@ struct ContentView: View {
                 CommandAction(
                     title: "Reply to Chat", keywords: ["reply", "respond", "answer"],
                     iconSystemName: "arrowshape.turn.up.left",
-                    isContextual: true,
-                    showInPalette: true
+                    isContextual: true
                 ) {
                     openReply()
                 }, at: 0
@@ -292,9 +281,10 @@ struct ContentView: View {
     
     private func archiveCurrentConversation() {
         guard let conversation = selectedConversation else { return }
-        let shouldArchive = !stateStore.isArchived(conversationId: conversation.id)
-        handleArchiveToggle(conversationId: conversation.id, archive: shouldArchive)
-        print("\(shouldArchive ? "Archived" : "Unarchived") conversation: \(conversation.person)")
+        // TODO: Implement actual archive API call
+        // For now, just clear selection (simulating moving to archive)
+        selectedConversation = nil
+        print("Archived conversation: \(conversation.person)")
     }
     
     private func pinCurrentConversation() {
@@ -310,34 +300,6 @@ struct ContentView: View {
         if ConversationStateStore.shared.isPinned(conversationId: conversation.id) {
             ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
             print("Unpinned conversation: \(conversation.person)")
-        }
-    }
-
-    private func handleArchiveToggle(conversationId: String, archive: Bool) {
-        if archive {
-            stateStore.archive(conversationId: conversationId)
-            if selectedConversation?.id == conversationId {
-                selectNextConversation(after: conversationId)
-            }
-        } else {
-            stateStore.unarchive(conversationId: conversationId)
-        }
-    }
-
-    private func selectNextConversation(after conversationId: String) {
-        let conversations = inboxViewModel.conversations
-        guard let idx = conversations.firstIndex(where: { $0.id == conversationId }) else {
-            selectedConversation = nil
-            return
-        }
-
-        // Prefer the next conversation down the list that's not archived
-        let next = conversations[(idx + 1)...].first { !stateStore.isArchived(conversationId: $0.id) }
-            ?? conversations[..<idx].reversed().first { !stateStore.isArchived(conversationId: $0.id) }
-
-        selectedConversation = next
-        if let next {
-            inboxViewModel.select(conversation: next)
         }
     }
     
@@ -370,9 +332,6 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
-        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
-        .environmentObject(AccountViewModel())
-        .environmentObject(InboxViewModel())
-        .environmentObject(SettingsStore())
+    ContentView().environment(
+        \.managedObjectContext, PersistenceController.preview.container.viewContext)
 }

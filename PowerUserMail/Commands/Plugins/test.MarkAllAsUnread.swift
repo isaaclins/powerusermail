@@ -26,3 +26,4 @@ struct TestMarkAllAsUnreadCommand: CommandPlugin {
 
 
 
+

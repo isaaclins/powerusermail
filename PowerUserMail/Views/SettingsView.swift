@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// Initial in-app "Settings" view used for onboarding (connect an account).
+/// ContentView expects this type when no accounts are configured.
+struct SettingsView: View {
+    @ObservedObject var accountViewModel: AccountViewModel
+
+    var body: some View {
+        OnboardingConnectView(accountViewModel: accountViewModel)
+    }
+}
+
 struct OnboardingConnectView: View {
     @ObservedObject var accountViewModel: AccountViewModel
 

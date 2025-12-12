@@ -116,8 +116,8 @@ struct InboxView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // Search bar (like demo)
-            searchBar
+            // Top bar (search + settings)
+            topBar
 
             // Filter tabs
             filterBar
@@ -320,38 +320,79 @@ struct InboxView: View {
         }
     }
 
-    // MARK: - Search Bar (like demo)
-    private var searchBar: some View {
-        Button {
-            onOpenCommandPalette?()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+    // MARK: - Top Bar (Search + Settings)
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                onOpenCommandPalette?()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
 
-                Text("Search emails...")
-                    .foregroundStyle(.secondary)
+                    Text("Search emails...")
+                        .foregroundStyle(.secondary)
 
-                Spacer()
+                    Spacer()
 
-                Text("⌘K")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    Text("⌘K")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .buttonStyle(.plain)
+
+            settingsButton
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
     }
+
+    @ViewBuilder
+    private var settingsButton: some View {
+#if os(macOS)
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+        } else {
+            Button {
+                openAppSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+        }
+#else
+        EmptyView()
+#endif
+    }
+
+#if os(macOS)
+    private func openAppSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+#endif
 
     // MARK: - Authentication Required View
     private var authenticationRequiredView: some View {

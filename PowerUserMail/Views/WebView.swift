@@ -4,10 +4,16 @@ import WebKit
 struct WebView: NSViewRepresentable {
     let htmlContent: String
     var darkMode: Bool = false
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
     
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         return webView
     }
@@ -15,6 +21,49 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         let styledHTML = wrapWithStyling(htmlContent)
         nsView.loadHTMLString(styledHTML, baseURL: nil)
+    }
+
+    // MARK: - Coordinator
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            if navigationAction.navigationType == .linkActivated,
+               let url = navigationAction.request.url,
+               shouldOpenExternally(url: url) {
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Handles target="_blank" links.
+            if let url = navigationAction.request.url, shouldOpenExternally(url: url) {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
+        }
+
+        private func shouldOpenExternally(url: URL) -> Bool {
+            guard let scheme = url.scheme?.lowercased() else { return false }
+            switch scheme {
+            case "http", "https", "mailto", "tel":
+                return true
+            default:
+                return false
+            }
+        }
     }
     
     private func wrapWithStyling(_ content: String) -> String {
