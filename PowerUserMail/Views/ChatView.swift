@@ -1,6 +1,6 @@
+import AppKit
 import SwiftUI
 import WebKit
-import AppKit
 
 struct ChatView: View {
     let conversation: Conversation
@@ -647,8 +647,9 @@ struct ScrollTransparentWebView: NSViewRepresentable {
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             if navigationAction.navigationType == .linkActivated,
-               let url = navigationAction.request.url,
-               shouldOpenExternally(url: url) {
+                let url = navigationAction.request.url,
+                shouldOpenExternally(url: url)
+            {
                 NSWorkspace.shared.open(url)
                 decisionHandler(.cancel)
                 return

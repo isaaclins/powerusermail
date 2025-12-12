@@ -1,9 +1,10 @@
 import SwiftUI
+
 #if os(macOS)
-import AppKit
-import UserNotifications
+    import AppKit
+    import UserNotifications
 #else
-import UserNotifications
+    import UserNotifications
 #endif
 
 // MARK: - Inbox Filter (Demo has only 3 filters)
@@ -65,26 +66,32 @@ struct InboxView: View {
             guard !searchText.isEmpty else { return list }
             return list.filter { conv in
                 conv.person.localizedCaseInsensitiveContains(searchText)
-                    || conv.messages.contains { $0.subject.localizedCaseInsensitiveContains(searchText) }
+                    || conv.messages.contains {
+                        $0.subject.localizedCaseInsensitiveContains(searchText)
+                    }
             }
         }
 
         // Base groups
         var pinnedAll = conversations.filter { stateStore.isPinned(conversationId: $0.id) }
         var pinnedArchived = conversations.filter {
-            stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
+            stateStore.isPinned(conversationId: $0.id)
+                && stateStore.isArchived(conversationId: $0.id)
         }
         var pinnedNonArchived = conversations.filter {
-            stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id)
+            stateStore.isPinned(conversationId: $0.id)
+                && !stateStore.isArchived(conversationId: $0.id)
         }
 
         // Non-pinned groups
         var nonPinnedAll = conversations.filter { !stateStore.isPinned(conversationId: $0.id) }
         var nonPinnedArchived = conversations.filter {
-            !stateStore.isPinned(conversationId: $0.id) && stateStore.isArchived(conversationId: $0.id)
+            !stateStore.isPinned(conversationId: $0.id)
+                && stateStore.isArchived(conversationId: $0.id)
         }
         var nonPinnedUnread = conversations.filter {
-            !stateStore.isPinned(conversationId: $0.id) && !stateStore.isArchived(conversationId: $0.id) && $0.hasUnread
+            !stateStore.isPinned(conversationId: $0.id)
+                && !stateStore.isArchived(conversationId: $0.id) && $0.hasUnread
         }
 
         // Apply search
@@ -139,8 +146,8 @@ struct InboxView: View {
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 viewModel.select(conversation: conversation)
                                 selectedConversation = conversation
-                        ConversationStateStore.shared.markAsRead(
-                            conversationId: conversation.id)
+                                ConversationStateStore.shared.markAsRead(
+                                    conversationId: conversation.id)
                             }
                         }
                     }
@@ -240,16 +247,19 @@ struct InboxView: View {
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsRead(conversationIds: allIds)
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsUnread"))) {
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkAllAsUnread")))
+        {
             _ in
             let allIds = viewModel.conversations.map { $0.id }
             ConversationStateStore.shared.markAllAsUnread(conversationIds: allIds)
         }
-#if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await notificationManager.refreshAuthorizationStatus() }
-        }
-#endif
+        #if os(macOS)
+            .onReceive(
+                NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            ) { _ in
+                Task { await notificationManager.refreshAuthorizationStatus() }
+            }
+        #endif
         .onAppear {
             // Configure and load inbox when view appears
             viewModel.configure(service: service, myEmail: myEmail)
@@ -278,13 +288,13 @@ struct InboxView: View {
 
             Spacer()
 
-#if os(macOS)
-            Button("Open Settings") {
-                openNotificationSettings()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-#endif
+            #if os(macOS)
+                Button("Open Settings") {
+                    openNotificationSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            #endif
         }
         .padding(12)
         .background(.ultraThinMaterial)
@@ -292,12 +302,15 @@ struct InboxView: View {
         .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
     }
 
-#if os(macOS)
-    private func openNotificationSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
-        NSWorkspace.shared.open(url)
-    }
-#endif
+    #if os(macOS)
+        private func openNotificationSettings() {
+            guard
+                let url = URL(
+                    string: "x-apple.systempreferences:com.apple.preference.notifications")
+            else { return }
+            NSWorkspace.shared.open(url)
+        }
+    #endif
 
     /// Move selection with keyboard arrows (only when this view has focus)
     private func moveSelection(_ delta: Int) {
@@ -359,40 +372,40 @@ struct InboxView: View {
 
     @ViewBuilder
     private var settingsButton: some View {
-#if os(macOS)
-        if #available(macOS 14.0, *) {
-            SettingsLink {
-                Image(systemName: "gearshape")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+        #if os(macOS)
+            if #available(macOS 14.0, *) {
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
+            } else {
+                Button {
+                    openAppSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
             }
-            .buttonStyle(.plain)
-            .help("Settings")
-        } else {
-            Button {
-                openAppSettings()
-            } label: {
-                Image(systemName: "gearshape")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .help("Settings")
-        }
-#else
-        EmptyView()
-#endif
+        #else
+            EmptyView()
+        #endif
     }
 
-#if os(macOS)
-    private func openAppSettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-    }
-#endif
+    #if os(macOS)
+        private func openAppSettings() {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
+    #endif
 
     // MARK: - Authentication Required View
     private var authenticationRequiredView: some View {
@@ -700,13 +713,15 @@ struct ConversationRow: View {
                     object: nil,
                     userInfo: [
                         "id": conversation.id,
-                        "archive": !ConversationStateStore.shared.isArchived(conversationId: conversation.id)
+                        "archive": !ConversationStateStore.shared.isArchived(
+                            conversationId: conversation.id),
                     ])
             } label: {
                 Label(
                     ConversationStateStore.shared.isArchived(conversationId: conversation.id)
                         ? "Move to Inbox" : "Archive",
-                    systemImage: ConversationStateStore.shared.isArchived(conversationId: conversation.id)
+                    systemImage: ConversationStateStore.shared.isArchived(
+                        conversationId: conversation.id)
                         ? "tray.and.arrow.up" : "archivebox"
                 )
             }
