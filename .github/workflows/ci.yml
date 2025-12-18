@@ -1,184 +1,72 @@
-# CI Pipeline - Runs on dev branch and PRs
+# CI Pipeline — uses Makefile for reproducible builds & tests
 name: CI
 
 on:
   push:
-    branches: [dev]
+    branches: [main, dev]
   pull_request:
     branches: [main, dev]
 
 jobs:
-  build:
-    name: Build & Test
-    runs-on: macos-15
-
+  unit-tests:
+    name: Unit Tests
+    runs-on: macos-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: List available Xcode versions
-        run: ls -la /Applications/ | grep Xcode
-
-      - name: Select Xcode version
-        run: |
-          # Use the latest available Xcode 16.x
-          if [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-          elif [ -d "/Applications/Xcode.app" ]; then
-            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          fi
-
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build
-        run: |
-          xcodebuild build \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Run Unit Tests
-        run: |
-          xcodebuild test \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -destination 'platform=macOS' \
-            -only-testing:PowerUserMailTests \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee test_output.txt || true
-
-          # Check for test failures
-          if grep -q "** TEST FAILED **" test_output.txt; then
-            echo "::warning::Some tests failed"
-          fi
-
-  performance:
-    name: Performance Tests
-    runs-on: macos-15
-    needs: build
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Select Xcode version
-        run: |
-          if [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-          elif [ -d "/Applications/Xcode.app" ]; then
-            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          fi
-
-      - name: Build for Testing
-        run: |
-          xcodebuild build-for-testing \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -destination 'platform=macOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Run Performance Tests
-        id: perf_tests
-        run: |
-          mkdir -p performance-reports
-
-          echo "# ⚡ PowerUserMail Performance Report" > performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "> **Target:** Sub-50ms for all user interactions" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-
-          # Run performance unit tests
-          echo "## 🧪 Unit Performance Tests" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-          echo '```' >> performance-reports/PERFORMANCE_REPORT.md
-
-          xcodebuild test \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -destination 'platform=macOS' \
-            -only-testing:PowerUserMailTests/PerformanceTests \
-            -only-testing:PowerUserMailTests/LargeScalePerformanceTests \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee perf_output.txt || true
-
-          # Extract relevant performance data
-          grep -E "(✅|⚠️|🟠|❌|Test Case|passed|failed|measured|average)" perf_output.txt >> performance-reports/PERFORMANCE_REPORT.md || echo "No detailed metrics captured" >> performance-reports/PERFORMANCE_REPORT.md
-
-          echo '```' >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-
-          # Add summary table
-          echo "## 📊 Summary" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "| Category | Target | Status |" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "|----------|--------|--------|" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "| UI Interactions | ≤50ms | ✅ |" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "| Command Palette | ≤50ms | ✅ |" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "| State Changes | ≤50ms | ✅ |" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "| Data Operations | ≤50ms | ✅ |" >> performance-reports/PERFORMANCE_REPORT.md
-          echo "" >> performance-reports/PERFORMANCE_REPORT.md
-
-          # Check for failures
-          FAILED_COUNT=$(grep -c "❌" perf_output.txt || echo "0")
-          if [ "$FAILED_COUNT" -gt "0" ]; then
-            echo "::warning::$FAILED_COUNT performance tests exceeded 50ms threshold"
-            echo "perf_status=warning" >> $GITHUB_OUTPUT
-          else
-            echo "perf_status=success" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload Performance Report
+      - uses: actions/checkout@v4
+      
+      - name: Run unit tests
+        run: make unit-test
+      
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: performance-report
-          path: performance-reports/
+          name: unit-test-results
+          path: build/Logs/Test/*.xcresult
+          retention-days: 7
 
-      - name: Comment PR with Performance Results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+  build-and-archive:
+    name: Build & Archive
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build
+        run: make build
+      
+      - name: Create archive
+        run: make archive
+      
+      - name: Upload archive
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            const report = fs.readFileSync('performance-reports/PERFORMANCE_REPORT.md', 'utf8');
+          name: PowerUserMail-archive
+          path: build/archive/*.xcarchive
+          retention-days: 30
 
-            // Find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
+  performance-tests:
+    name: Performance Tests
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run performance tests
+        run: make perf || true
+      
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: |
+            performance-reports/
+            build/Logs/Test/*.xcresult
+          retention-days: 30
 
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('PowerUserMail Performance Report')
-            );
 
-            const body = report + '\n\n---\n*Updated by CI on ' + new Date().toISOString() + '*';
 
             if (botComment) {
               await github.rest.issues.updateComment({
