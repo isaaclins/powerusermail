@@ -22,6 +22,9 @@ final class InboxViewModel: ObservableObject {
     private var authFailureCount = 0
     private let maxAuthFailures = 2  // Stop retrying after this many consecutive failures
 
+    // Sync manager for cache-first architecture
+    private let syncManager = SyncManager.shared
+
     // Adaptive polling configuration
     private var basePollingInterval: TimeInterval = 60  // 60 seconds base (was 15)
     private var currentPollingInterval: TimeInterval = 60
@@ -42,7 +45,8 @@ final class InboxViewModel: ObservableObject {
             forName: Notification.Name("SettingsPollingModeChanged"), object: nil, queue: .main
         ) { [weak self] notification in
             if let raw = notification.userInfo?["mode"] as? String,
-               let mode = PollingMode(rawValue: raw) {
+                let mode = PollingMode(rawValue: raw)
+            {
                 self?.applyPollingMode(mode)
             }
         }
@@ -131,6 +135,12 @@ final class InboxViewModel: ObservableObject {
         loadingProgress = ""
         isLoading = false
         isConfigured = false
+
+        // Clear cache if we have an email
+        if !myEmail.isEmpty {
+            try? syncManager.clearCache(for: myEmail)
+        }
+
         myEmail = ""
         service = nil
         requiresReauthentication = false
@@ -245,33 +255,28 @@ final class InboxViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        // Clear for fresh load, but keep existing if this is a refresh
-        let isRefresh = !loadedThreads.isEmpty
-        if !isRefresh {
-            loadedThreads = []
-            conversations = []
-        }
-
-        var threadCount = 0
-
         do {
-            // Use streaming API for progressive loading
+            NSLog("📧 [PowerUserMail] Loading inbox for \(myEmail)")
+
+            // TEMPORARY: Disable cache and use streaming directly until cache issue is resolved
+            loadedThreads = []
+            var threadCount = 0
+
             for try await thread in service.fetchInboxStream() {
                 threadCount += 1
                 loadingProgress = "Loading \(threadCount) conversations..."
 
-                // Check if we already have this thread (for refreshes)
                 if let existingIndex = loadedThreads.firstIndex(where: { $0.id == thread.id }) {
                     loadedThreads[existingIndex] = thread
                 } else {
                     loadedThreads.append(thread)
                 }
 
-                // Update UI progressively
                 processConversations(from: loadedThreads)
             }
-
             loadingProgress = ""
+            NSLog("✅ [PowerUserMail] Loaded \(threadCount) threads via streaming")
+
             // Reset failure count on success
             authFailureCount = 0
 
@@ -451,5 +456,62 @@ final class InboxViewModel: ObservableObject {
 
     func select(conversation: Conversation) {
         selectedConversation = conversation
+    }
+
+    // MARK: - Search
+
+    /// Search emails locally in cache
+    func search(query: String) async throws -> [Conversation] {
+        guard !query.isEmpty else {
+            return conversations
+        }
+
+        let threads = try syncManager.searchEmails(query: query, accountEmail: myEmail)
+
+        // Use the same processConversations logic but return instead of assigning
+        let allMessages = threads.flatMap { $0.messages }
+        let promotedIDs = PromotedThreadStore.shared.promotedThreadIDs
+
+        let promotedMessages = allMessages.filter { promotedIDs.contains($0.threadId) }
+        let standardMessages = allMessages.filter { !promotedIDs.contains($0.threadId) }
+
+        var searchConversations: [Conversation] = []
+
+        // Group Standard by Person
+        let groupedByPerson = Dictionary(grouping: standardMessages) { message -> String in
+            if message.from.localizedCaseInsensitiveContains(self.myEmail) {
+                if let other = message.to.first(where: {
+                    !$0.localizedCaseInsensitiveContains(self.myEmail)
+                }) {
+                    return other
+                }
+                return message.to.first ?? message.from
+            } else {
+                return message.from
+            }
+        }
+
+        for (person, msgs) in groupedByPerson {
+            searchConversations.append(
+                Conversation(
+                    id: person,
+                    person: person,
+                    messages: msgs.sorted(by: { $0.receivedAt < $1.receivedAt })
+                ))
+        }
+
+        // Group Promoted by Thread
+        let groupedByThread = Dictionary(grouping: promotedMessages, by: { $0.threadId })
+        for (threadId, msgs) in groupedByThread {
+            let topic = msgs.first?.subject ?? "Unknown Topic"
+            searchConversations.append(
+                Conversation(
+                    id: threadId,
+                    person: "Topic: \(topic)",
+                    messages: msgs.sorted(by: { $0.receivedAt < $1.receivedAt })
+                ))
+        }
+
+        return searchConversations
     }
 }

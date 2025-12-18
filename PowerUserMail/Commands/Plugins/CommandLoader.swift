@@ -9,45 +9,48 @@
 //  3. Add it to the `allPlugins` array below
 //
 
-import Foundation
 import AppKit
+import Foundation
 
 /// All available command plugins
 /// Add your custom plugins here to register them
 @MainActor
 struct CommandLoader {
-    
+
     /// All plugins to be loaded
     /// Simply add your CommandPlugin conforming struct here
     static let allPlugins: [CommandPlugin] = [
         // Email actions
         NewEmailCommand(),
         MarkAllAsReadCommand(),
-        
+
         // Account
         SwitchAccountCommand(),
-        
+
         // Navigation
         ToggleSidebarCommand(),
-        
+
+        // Settings
+        OpenSettingsCommand(),
+
         // Filters
         ShowAllCommand(),
         ShowUnreadCommand(),
         ShowArchivedCommand(),
         TestMarkAllAsUnreadCommand(),
-        
+
         // Conversation actions (contextual - only shown when chat is selected)
         ArchiveConversationCommand(),
         PinConversationCommand(),
         UnpinConversationCommand(),
         MarkUnreadCommand(),
         MarkReadCommand(),
-        
+
         // System
         CheckForUpdatesCommand(),
         QuitAppCommand(),
     ]
-    
+
     /// Load all plugins into the registry
     static func loadAll() {
         print("🚀 CommandLoader.loadAll() called with \(allPlugins.count) plugins")
@@ -65,9 +68,8 @@ struct QuitAppCommand: CommandPlugin {
     let iconSystemName = "power"
     let iconColor: CommandIconColor = .red
     let shortcut = "⌘Q"
-    
+
     func execute() {
         NSApplication.shared.terminate(nil)
     }
 }
-

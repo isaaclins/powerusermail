@@ -61,6 +61,18 @@ struct CommandPaletteView: View {
         filterActions(query: searchText, actions: actions)
     }
 
+    private var settingsResults: [CommandAction] {
+        filteredResults.filter { $0.keywords.contains("__settings") }
+    }
+
+    private var nonSettingsResults: [CommandAction] {
+        filteredResults.filter { !$0.keywords.contains("__settings") }
+    }
+
+    private var commandResults: [CommandAction] {
+        settingsResults + nonSettingsResults
+    }
+
     private var recentPeople: [Conversation] {
         // Show recent conversations when search is empty, or filter when searching
         if searchText.isEmpty {
@@ -235,30 +247,60 @@ struct CommandPaletteView: View {
             VerticalScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     // ACTIONS Section
-                    if !filteredResults.isEmpty {
-                        Section {
-                            ForEach(Array(filteredResults.enumerated()), id: \.offset) {
-                                index, action in
-                                CommandRowDemo(
-                                    action: action,
-                                    isSelected: selectedSection == .commands
-                                        && index == selectedIndex
-                                )
-                                .id("cmd-\(searchText)-\(index)")
-                                .onTapGesture {
-                                    onSelect(action)
-                                    isPresented = false
-                                }
-                                .onHover {
-                                    if $0 {
-                                        selectedSection = .commands
-                                        selectedIndex = index
+                    if !commandResults.isEmpty {
+                        if !settingsResults.isEmpty {
+                            Section {
+                                ForEach(Array(settingsResults.enumerated()), id: \.offset) {
+                                    index, action in
+                                    let globalIndex = index
+                                    CommandRowDemo(
+                                        action: action,
+                                        isSelected: selectedSection == .commands
+                                            && globalIndex == selectedIndex
+                                    )
+                                    .id("cmd-\(searchText)-\(globalIndex)")
+                                    .onTapGesture {
+                                        onSelect(action)
+                                        isPresented = false
+                                    }
+                                    .onHover {
+                                        if $0 {
+                                            selectedSection = .commands
+                                            selectedIndex = globalIndex
+                                        }
                                     }
                                 }
+                            } header: {
+                                SectionHeaderDemo(title: "SETTINGS")
                             }
-                        } header: {
-                            SectionHeaderDemo(
-                                title: searchText.isEmpty ? "ACTIONS" : "COMMANDS")
+                        }
+
+                        if !nonSettingsResults.isEmpty {
+                            Section {
+                                ForEach(Array(nonSettingsResults.enumerated()), id: \.offset) {
+                                    index, action in
+                                    let globalIndex = settingsResults.count + index
+                                    CommandRowDemo(
+                                        action: action,
+                                        isSelected: selectedSection == .commands
+                                            && globalIndex == selectedIndex
+                                    )
+                                    .id("cmd-\(searchText)-\(globalIndex)")
+                                    .onTapGesture {
+                                        onSelect(action)
+                                        isPresented = false
+                                    }
+                                    .onHover {
+                                        if $0 {
+                                            selectedSection = .commands
+                                            selectedIndex = globalIndex
+                                        }
+                                    }
+                                }
+                            } header: {
+                                SectionHeaderDemo(
+                                    title: searchText.isEmpty ? "ACTIONS" : "COMMANDS")
+                            }
                         }
                     }
 
@@ -289,7 +331,7 @@ struct CommandPaletteView: View {
                         }
                     }
 
-                    if filteredResults.isEmpty && recentPeople.isEmpty && !searchText.isEmpty {
+                    if commandResults.isEmpty && recentPeople.isEmpty && !searchText.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 32))
@@ -316,12 +358,12 @@ struct CommandPaletteView: View {
         }
         .onChange(of: searchText) { _, _ in
             selectedIndex = 0
-            selectedSection = filteredResults.isEmpty && !recentPeople.isEmpty ? .recent : .commands
+            selectedSection = commandResults.isEmpty && !recentPeople.isEmpty ? .recent : .commands
         }
     }
 
     private func moveSelection(_ direction: Int) {
-        let cmdCount = filteredResults.count
+        let cmdCount = commandResults.count
         let recentCount = recentPeople.count
 
         // Enable auto-scroll for keyboard navigation
@@ -364,8 +406,8 @@ struct CommandPaletteView: View {
 
     private func executeSelected() {
         if selectedSection == .commands {
-            guard !filteredResults.isEmpty else { return }
-            let action = filteredResults[selectedIndex]
+            guard !commandResults.isEmpty else { return }
+            let action = commandResults[selectedIndex]
             guard action.isEnabled else { return }
             isPresented = false
             onSelect(action)
