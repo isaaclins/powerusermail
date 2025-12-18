@@ -80,6 +80,9 @@ ui-test:
 run:
 	@APP_PATH="$(BUILD_DIR)/Build/Products/$(CONFIGURATION)/PowerUserMail.app"; \
 	if [ -d "$$APP_PATH" ]; then \
+		echo "[Run] Stopping any running PowerUserMail instances..."; \
+		pkill -x PowerUserMail 2>/dev/null || true; \
+		sleep 0.5; \
 		echo "[Run] Opening $$APP_PATH"; \
 		open "$$APP_PATH"; \
 	else \
@@ -142,9 +145,15 @@ dev:
 	@echo "[Dev] Watching PowerUserMail/ for changes..."
 	@echo "Tip: Press Ctrl+C to stop."
 	@if command -v entr >/dev/null 2>&1; then \
-		find PowerUserMail -type f \( -name "*.swift" -o -name "*.entitlements" -o -name "*.plist" \) | entr -r make build; \
+		while true; do \
+			find PowerUserMail -type f \( -name "*.swift" -o -name "*.entitlements" -o -name "*.plist" \) 2>/dev/null | \
+			entr -d sh -c 'if make build; then make run; fi'; \
+		done; \
 	elif command -v fswatch >/dev/null 2>&1; then \
-		fswatch -r PowerUserMail --event Created --event Updated --event Removed | xargs -n 1 -I {} make build; \
+		fswatch -r PowerUserMail --event Created --event Updated --event Removed | \
+		while read -r event; do \
+			if make build; then make run; fi; \
+		done; \
 	else \
 		echo "[Dev] ERROR: 'entr' or 'fswatch' not found."; \
 		echo "Install via:"; \
