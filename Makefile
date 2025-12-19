@@ -7,7 +7,7 @@ DESTINATION ?= platform=macOS
 PROJECT ?= PowerUserMail.xcodeproj
 BUILD_DIR ?= build
 
-XCODEBUILD = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) -destination '$(DESTINATION)' -derivedDataPath $(BUILD_DIR)
+XCODEBUILD = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) -destination '$(DESTINATION)' -derivedDataPath $(BUILD_DIR) CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO
 
 .PHONY: help build test unit-test ui-test quicktest run perf clean archive ci dev dev-test format lint open-logs open-test-results
 
@@ -152,17 +152,24 @@ open-test-results:
 	fi
 
 dev:
+	@echo "[Clean] Removing derived data in $(BUILD_DIR)"
+	@if command -v xcpretty >/dev/null 2>&1; then \
+		$(XCODEBUILD) clean | xcpretty; \
+	else \
+		$(XCODEBUILD) clean; \
+	fi
+	@rm -rf $(BUILD_DIR)
 	@echo "[Dev] Watching PowerUserMail/ for changes..."
 	@echo "Tip: Press Ctrl+C to stop."
 	@if command -v entr >/dev/null 2>&1; then \
-		while true; do \
-			find PowerUserMail -type f \( -name "*.swift" -o -name "*.entitlements" -o -name "*.plist" \) 2>/dev/null | \
-			entr -d sh -c 'if make build; then make run; fi'; \
-		done; \
+		trap 'echo "\n[Dev] Stopped."; exit 0' INT; \
+		find PowerUserMail -type f \( -name "*.swift" -o -name "*.entitlements" -o -name "*.plist" \) 2>/dev/null | \
+		entr -r sh -c 'make build && make run'; \
 	elif command -v fswatch >/dev/null 2>&1; then \
+		trap 'echo "\n[Dev] Stopped."; exit 0' INT; \
 		fswatch -r PowerUserMail --event Created --event Updated --event Removed | \
 		while read -r event; do \
-			if make build; then make run; fi; \
+			make build && make run || exit 1; \
 		done; \
 	else \
 		echo "[Dev] ERROR: 'entr' or 'fswatch' not found."; \
