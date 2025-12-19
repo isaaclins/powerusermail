@@ -54,11 +54,18 @@ jobs:
 
   quicktests:
     name: Quick Tests (FAST_TESTS)
-    runs-on: macos-26
+    runs-on: macos-15
     needs: docs-filter
     if: (github.ref == 'refs/heads/dev' || github.base_ref == 'dev') && needs.docs-filter.outputs.docs_only != 'true'
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.0.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          xcodebuild -version
 
       - name: Run quick tests (FAST_TESTS=1)
         run: FAST_TESTS=1 make quicktest
@@ -73,11 +80,18 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    runs-on: macos-26
+    runs-on: macos-15
     needs: docs-filter
     if: needs.docs-filter.outputs.docs_only != 'true'
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Select Xcode 26.0.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          xcodebuild -version
       
       - name: Run unit tests
         run: make unit-test
@@ -92,11 +106,18 @@ jobs:
 
   build-and-archive:
     name: Build & Archive
-    runs-on: macos-26
+    runs-on: macos-15
     needs: docs-filter
     if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Select Xcode 26.0.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          xcodebuild -version
       
       - name: Build
         run: make build
@@ -114,11 +135,18 @@ jobs:
 
   performance-tests:
     name: Performance Tests
-    runs-on: macos-26
+    runs-on: macos-15
     needs: docs-filter
     if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Select Xcode 26.0.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          xcodebuild -version
       
       - name: Run performance tests
         run: make perf || true
