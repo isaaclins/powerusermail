@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="false" userDefinedModelVersionIdentifier="">
     <entity name="EmailEntity" representedClassName="EmailEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="accountEmail" attributeType="String"/>
         <attribute name="bcc" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromData" customClassName="[String]"/>
         <attribute name="body" optional="YES" attributeType="String"/>
         <attribute name="cc" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromData" customClassName="[String]"/>
@@ -17,6 +18,7 @@
         <relationship name="thread" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="ThreadEntity" inverseName="messages" inverseEntity="ThreadEntity"/>
     </entity>
     <entity name="ThreadEntity" representedClassName="ThreadEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="accountEmail" attributeType="String"/>
         <attribute name="id" attributeType="String"/>
         <attribute name="isMuted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="participants" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromData" customClassName="[String]"/>

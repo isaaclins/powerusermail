@@ -11,6 +11,7 @@ import XCTest
 final class PerformanceUITests: XCTestCase {
 
     var app: XCUIApplication!
+    private let isFastTestsEnabled = ProcessInfo.processInfo.environment["FAST_TESTS"] == "1"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -199,6 +200,7 @@ final class PerformanceUITests: XCTestCase {
 final class PerformanceStressTests: XCTestCase {
 
     var app: XCUIApplication!
+    private let isFastTestsEnabled = ProcessInfo.processInfo.environment["FAST_TESTS"] == "1"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -208,8 +210,9 @@ final class PerformanceStressTests: XCTestCase {
 
     func testRapidCommandPaletteToggle() throws {
         // Rapidly open and close command palette
+        let iterations = isFastTestsEnabled ? 3 : 10
         measure {
-            for _ in 0..<10 {
+            for _ in 0..<iterations {
                 app.typeKey("k", modifierFlags: .command)
                 app.typeKey(.escape, modifierFlags: [])
             }
@@ -218,8 +221,9 @@ final class PerformanceStressTests: XCTestCase {
 
     func testRapidFilterSwitch() throws {
         // Rapidly switch between filters
+        let iterations = isFastTestsEnabled ? 3 : 10
         measure {
-            for _ in 0..<10 {
+            for _ in 0..<iterations {
                 app.typeKey("1", modifierFlags: .command)
                 app.typeKey("2", modifierFlags: .command)
                 app.typeKey("3", modifierFlags: .command)
@@ -239,7 +243,7 @@ final class PerformanceStressTests: XCTestCase {
 
         // Measure typing responsiveness
         measure {
-            let testString = "abcdefghij"
+            let testString = isFastTestsEnabled ? "abcde" : "abcdefghij"
             searchField.typeText(testString)
 
             // Delete
@@ -249,5 +253,3 @@ final class PerformanceStressTests: XCTestCase {
         }
     }
 }
-
-

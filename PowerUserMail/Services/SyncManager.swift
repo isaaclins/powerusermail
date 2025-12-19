@@ -8,6 +8,7 @@
 import Foundation
 
 /// Manages two-way sync between email server and local cache
+@MainActor
 final class SyncManager {
     static let shared = SyncManager()
 
@@ -27,7 +28,7 @@ final class SyncManager {
         // Cancel any existing sync for this account
         activeSyncTasks[accountEmail]?.cancel()
 
-        let syncTask = Task {
+        let syncTask = Task { @MainActor in
             do {
                 try await performSync(service: service, accountEmail: accountEmail)
             } catch {
@@ -40,12 +41,13 @@ final class SyncManager {
         activeSyncTasks.removeValue(forKey: accountEmail)
 
         // Return count of cached threads
-        return try repository.fetchThreads(for: accountEmail).count
+        return try await repository.fetchThreads(for: accountEmail).count
     }
 
     /// Perform the actual sync operation
+    @MainActor
     private func performSync(service: MailService, accountEmail: String) async throws {
-        let lastSync = repository.getLastSyncDate(for: accountEmail)
+        let lastSync = await repository.getLastSyncDate(for: accountEmail)
 
         print(
             "🔄 Starting sync for \(accountEmail) (last sync: \(lastSync?.description ?? "never"))")
@@ -60,7 +62,7 @@ final class SyncManager {
             print("📥 First sync: caching \(serverThreads.count) threads")
             for (index, thread) in serverThreads.enumerated() {
                 do {
-                    try repository.saveThread(thread, for: accountEmail)
+                    try await repository.saveThread(thread, for: accountEmail)
                     if (index + 1) % 10 == 0 {
                         print("  ✓ Cached \(index + 1)/\(serverThreads.count) threads")
                     }
@@ -69,7 +71,7 @@ final class SyncManager {
                     throw error
                 }
             }
-            try repository.updateLastSyncDate(Date(), for: accountEmail)
+            try await repository.updateLastSyncDate(Date(), for: accountEmail)
             print("✅ First sync complete!")
             return
         }
@@ -85,10 +87,10 @@ final class SyncManager {
         print("📥 Incremental sync: \(newOrUpdatedThreads.count) new/updated threads")
 
         for thread in newOrUpdatedThreads {
-            try repository.saveThread(thread, for: accountEmail)
+            try await repository.saveThread(thread, for: accountEmail)
         }
 
-        try repository.updateLastSyncDate(Date(), for: accountEmail)
+        try await repository.updateLastSyncDate(Date(), for: accountEmail)
 
         // Sync local state changes back to server
         try await syncLocalChangesToServer(service: service, accountEmail: accountEmail)
@@ -97,7 +99,7 @@ final class SyncManager {
     /// Sync local changes (read status, archive) back to server
     private func syncLocalChangesToServer(service: MailService, accountEmail: String) async throws {
         // Get all cached threads
-        let cachedThreads = try repository.fetchThreads(for: accountEmail)
+        let cachedThreads = try await repository.fetchThreads(for: accountEmail)
 
         // For each thread, check if local state differs from what we expect server state to be
         // In a real implementation, you'd track pending changes in a separate entity
@@ -118,14 +120,15 @@ final class SyncManager {
     /// Fetch inbox from cache, trigger background sync
     func fetchInbox(service: MailService, accountEmail: String) async throws -> [EmailThread] {
         // Try to get from cache first
-        let cachedThreads = try repository.fetchThreads(for: accountEmail)
+        let cachedThreads = try await repository.fetchThreads(for: accountEmail)
 
         // If cache is empty or stale (older than 5 minutes), force sync
-        if cachedThreads.isEmpty || isCacheStale(for: accountEmail, threshold: 300) {
+        let isStale = await isCacheStale(for: accountEmail, threshold: 300)
+        if cachedThreads.isEmpty || isStale {
             print("📭 Cache empty or stale, syncing from server")
             do {
                 try await performSync(service: service, accountEmail: accountEmail)
-                let refreshedThreads = try repository.fetchThreads(for: accountEmail)
+                let refreshedThreads = try await repository.fetchThreads(for: accountEmail)
                 print("✅ Sync completed: \(refreshedThreads.count) threads now in cache")
                 return refreshedThreads
             } catch {
@@ -139,9 +142,9 @@ final class SyncManager {
         print("⚡️ Returning \(cachedThreads.count) threads from cache")
 
         // Trigger background sync if cache is getting old (> 1 minute)
-        if isCacheStale(for: accountEmail, threshold: 60) {
-            Task.detached { [weak self] in
-                guard let self = self else { return }
+        if await isCacheStale(for: accountEmail, threshold: 60) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 try? await self.performSync(service: service, accountEmail: accountEmail)
                 print("✅ Background sync completed")
             }
@@ -154,7 +157,7 @@ final class SyncManager {
     func fetchMessage(id: String, service: MailService, accountEmail: String) async throws -> Email
     {
         // Try cache first
-        if let cached = try repository.fetchEmail(id: id) {
+        if let cached = try await repository.fetchEmail(id: id, accountEmail: accountEmail) {
             print("⚡️ Returning email \(id) from cache")
             return cached
         }
@@ -170,40 +173,42 @@ final class SyncManager {
     }
 
     /// Search emails locally
-    func searchEmails(query: String, accountEmail: String) throws -> [EmailThread] {
-        return try repository.searchThreads(query: query, for: accountEmail)
+    func searchEmails(query: String, accountEmail: String) async throws -> [EmailThread] {
+        return try await repository.searchThreads(query: query, for: accountEmail)
     }
 
     // MARK: - Local State Updates
 
     /// Mark email as read locally and sync to server
-    func markAsRead(emailId: String, service: MailService) async throws {
-        try repository.updateReadStatus(emailId: emailId, isRead: true)
+    func markAsRead(emailId: String, service: MailService, accountEmail: String) async throws {
+        try await repository.updateReadStatus(
+            emailId: emailId, isRead: true, accountEmail: accountEmail)
         // In a real implementation, sync to server
         // For now, the server state is managed by the service itself
     }
 
     /// Archive email locally and sync to server
-    func archiveEmail(emailId: String, service: MailService) async throws {
-        try repository.updateArchiveStatus(emailId: emailId, isArchived: true)
+    func archiveEmail(emailId: String, service: MailService, accountEmail: String) async throws {
+        try await repository.updateArchiveStatus(
+            emailId: emailId, isArchived: true, accountEmail: accountEmail)
         try await service.archive(id: emailId)
     }
 
     // MARK: - Cache Management
 
     /// Check if cache is stale
-    private func isCacheStale(for accountEmail: String, threshold: TimeInterval) -> Bool {
-        guard let lastSync = repository.getLastSyncDate(for: accountEmail) else {
+    private func isCacheStale(for accountEmail: String, threshold: TimeInterval) async -> Bool {
+        guard let lastSync = await repository.getLastSyncDate(for: accountEmail) else {
             return true
         }
         return Date().timeIntervalSince(lastSync) > threshold
     }
 
     /// Clear all cached data for an account
-    func clearCache(for accountEmail: String) throws {
+    func clearCache(for accountEmail: String) async throws {
         activeSyncTasks[accountEmail]?.cancel()
         activeSyncTasks.removeValue(forKey: accountEmail)
-        try repository.clearCache(for: accountEmail)
+        try await repository.clearCache(for: accountEmail)
     }
 
     /// Cancel ongoing sync for an account

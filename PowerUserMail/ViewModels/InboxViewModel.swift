@@ -138,7 +138,9 @@ final class InboxViewModel: ObservableObject {
 
         // Clear cache if we have an email
         if !myEmail.isEmpty {
-            try? syncManager.clearCache(for: myEmail)
+            Task {
+                try? await syncManager.clearCache(for: myEmail)
+            }
         }
 
         myEmail = ""
@@ -258,24 +260,37 @@ final class InboxViewModel: ObservableObject {
         do {
             NSLog("📧 [PowerUserMail] Loading inbox for \(myEmail)")
 
-            // TEMPORARY: Disable cache and use streaming directly until cache issue is resolved
-            loadedThreads = []
-            var threadCount = 0
+            // Cache-first load with streaming fallback
+            do {
+                loadingProgress = "Loading from cache..."
+                let threads = try await syncManager.fetchInbox(
+                    service: service, accountEmail: myEmail)
 
-            for try await thread in service.fetchInboxStream() {
-                threadCount += 1
-                loadingProgress = "Loading \(threadCount) conversations..."
-
-                if let existingIndex = loadedThreads.firstIndex(where: { $0.id == thread.id }) {
-                    loadedThreads[existingIndex] = thread
-                } else {
-                    loadedThreads.append(thread)
-                }
-
+                loadedThreads = threads
+                loadingProgress = "Processing \(threads.count) conversations..."
                 processConversations(from: loadedThreads)
+                loadingProgress = ""
+                NSLog("⚡️ [PowerUserMail] Loaded \(threads.count) threads from cache")
+            } catch {
+                NSLog("⚠️ [PowerUserMail] Cache path failed: \(error). Falling back to streaming")
+                loadedThreads = []
+                var threadCount = 0
+
+                for try await thread in service.fetchInboxStream() {
+                    threadCount += 1
+                    loadingProgress = "Loading \(threadCount) conversations..."
+
+                    if let existingIndex = loadedThreads.firstIndex(where: { $0.id == thread.id }) {
+                        loadedThreads[existingIndex] = thread
+                    } else {
+                        loadedThreads.append(thread)
+                    }
+
+                    processConversations(from: loadedThreads)
+                }
+                loadingProgress = ""
+                NSLog("✅ [PowerUserMail] Loaded \(threadCount) threads via streaming fallback")
             }
-            loadingProgress = ""
-            NSLog("✅ [PowerUserMail] Loaded \(threadCount) threads via streaming")
 
             // Reset failure count on success
             authFailureCount = 0
@@ -466,7 +481,7 @@ final class InboxViewModel: ObservableObject {
             return conversations
         }
 
-        let threads = try syncManager.searchEmails(query: query, accountEmail: myEmail)
+        let threads = try await syncManager.searchEmails(query: query, accountEmail: myEmail)
 
         // Use the same processConversations logic but return instead of assigning
         let allMessages = threads.flatMap { $0.messages }

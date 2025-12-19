@@ -9,13 +9,14 @@ BUILD_DIR ?= build
 
 XCODEBUILD = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) -destination '$(DESTINATION)' -derivedDataPath $(BUILD_DIR)
 
-.PHONY: help build test unit-test ui-test run perf clean archive ci dev dev-test format lint open-logs open-test-results
+.PHONY: help build test unit-test ui-test quicktest run perf clean archive ci dev dev-test format lint open-logs open-test-results
 
 help:
 	@echo "Targets:"
 	@echo "  build       - Build the app"
 	@echo "  test        - Run all tests (unit + UI)"
 	@echo "  unit-test   - Run unit tests only"
+	@echo "  quicktest   - Fast feedback: unit tests only, parallel enabled"
 	@echo "  ui-test     - Run UI tests only (requires Accessibility/Automation perms)"
 	@echo "  run         - Open the built app"
 	@echo "  dev         - Watch files & rebuild on change (requires 'entr' or 'fswatch')"
@@ -64,6 +65,15 @@ unit-test:
 		$(XCODEBUILD) test -only-testing:PowerUserMailTests | xcpretty; \
 	else \
 		$(XCODEBUILD) test -only-testing:PowerUserMailTests; \
+	fi
+
+# Fast feedback target: unit tests only with parallelization
+quicktest:
+	@echo "[Quick Test] $(SCHEME) on $(DESTINATION) (parallel)"
+	@if command -v xcpretty >/dev/null 2>&1; then \
+		$(XCODEBUILD) test -only-testing:PowerUserMailTests -parallel-testing-enabled YES -parallel-testing-worker-count 8 | xcpretty; \
+	else \
+		$(XCODEBUILD) test -only-testing:PowerUserMailTests -parallel-testing-enabled YES -parallel-testing-worker-count 8; \
 	fi
 
 # UI tests only (requires macOS Accessibility/Automation permissions)

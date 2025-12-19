@@ -19,6 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
 
+        // Clear cache if needed for migration
+        migrateDataStoreIfNeeded()
+
         // Initialize notification manager
         Task { @MainActor in
             await NotificationManager.shared.refreshAuthorizationStatus()
@@ -26,6 +29,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if NotificationManager.shared.authorizationStatus == .notDetermined {
                 await NotificationManager.shared.requestAuthorization()
             }
+        }
+    }
+
+    private func migrateDataStoreIfNeeded() {
+        let defaults = UserDefaults.standard
+        let migrationKey = "CoreDataMigrationVersion"
+        let currentVersion = 2  // Increment when schema changes
+
+        let savedVersion = defaults.integer(forKey: migrationKey)
+
+        if savedVersion < currentVersion {
+            print("🔄 Migrating Core Data store from version \(savedVersion) to \(currentVersion)")
+
+            // Clear the old store
+            let coordinator = PersistenceController.shared.container.persistentStoreCoordinator
+            if let storeURL = coordinator.persistentStores.first?.url {
+                do {
+                    try coordinator.destroyPersistentStore(
+                        at: storeURL, ofType: NSSQLiteStoreType, options: nil)
+                    try coordinator.addPersistentStore(
+                        ofType: NSSQLiteStoreType, configurationName: nil, at: storeURL,
+                        options: nil)
+                    print("✅ Core Data migration complete")
+                } catch {
+                    print("❌ Migration failed: \(error)")
+                }
+            }
+
+            defaults.set(currentVersion, forKey: migrationKey)
         }
     }
 

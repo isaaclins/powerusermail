@@ -8,9 +8,74 @@ on:
     branches: [main, dev]
 
 jobs:
+  docs-filter:
+    name: Detect Docs-Only Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.set.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute doc-only change set
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'performance-reports/**/*.md'
+              - '*.md'
+              - '*.rst'
+              - '*.txt'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+              - 'LICENSE'
+              - 'CHANGELOG.md'
+            non_docs:
+              - '**'
+              - '!docs/**'
+              - '!performance-reports/**/*.md'
+              - '!*.md'
+              - '!*.rst'
+              - '!*.txt'
+              - '!README.md'
+              - '!CONTRIBUTING.md'
+              - '!LICENSE'
+              - '!CHANGELOG.md'
+
+      - name: Set docs_only output
+        id: set
+        run: |
+          if [ "${{ steps.filter.outputs.docs }}" = "true" ] && [ "${{ steps.filter.outputs.non_docs }}" != "true" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  quicktests:
+    name: Quick Tests (FAST_TESTS)
+    runs-on: macos-latest
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/dev' || github.base_ref == 'dev') && needs.docs-filter.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run quick tests (FAST_TESTS=1)
+        run: FAST_TESTS=1 make quicktest
+
+      - name: Upload quicktest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quicktest-results
+          path: build/Logs/Test/*.xcresult
+          retention-days: 7
+
   unit-tests:
     name: Unit Tests
     runs-on: macos-latest
+    needs: docs-filter
+    if: needs.docs-filter.outputs.docs_only != 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -28,7 +93,8 @@ jobs:
   build-and-archive:
     name: Build & Archive
     runs-on: macos-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -49,7 +115,8 @@ jobs:
   performance-tests:
     name: Performance Tests
     runs-on: macos-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
     steps:
       - uses: actions/checkout@v4
       
