@@ -3,7 +3,6 @@
 //  PowerUserMail
 //
 //  Plugin command to mark all conversations as read.
-//  This is an example of how to create modular commands.
 //
 
 import Foundation
@@ -11,20 +10,13 @@ import Foundation
 struct MarkAllAsReadCommand: CommandPlugin {
     let id = "mark-all-as-read"
     let title = "Mark All as Read"
+    let subtitle = "Clear all unread badges"
     let keywords = ["mark", "all", "read", "unread", "clear", "inbox", "notifications", "seen", "mar", "maar"]
-    let iconSystemName = "envelope.open"
+    let iconSystemName = "checkmark"
+    let iconColor: CommandIconColor = .green
+    let shortcut = "⌘⇧R"
     
     func execute() {
         NotificationCenter.default.post(name: Notification.Name("MarkAllAsRead"), object: nil)
     }
 }
-
-// Auto-register when the app loads
-extension MarkAllAsReadCommand {
-    static func register() {
-        Task { @MainActor in
-            CommandRegistry.shared.register(MarkAllAsReadCommand())
-        }
-    }
-}
-

@@ -9,28 +9,69 @@ import CoreData
 import SwiftUI
 import UserNotifications
 
+#if os(macOS)
+    import AppKit
+#endif
+
 // App Delegate for handling notifications
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
-        
+
+        // Clear cache if needed for migration
+        migrateDataStoreIfNeeded()
+
         // Initialize notification manager
         Task { @MainActor in
-            await NotificationManager.shared.requestAuthorization()
+            await NotificationManager.shared.refreshAuthorizationStatus()
+
+            if NotificationManager.shared.authorizationStatus == .notDetermined {
+                await NotificationManager.shared.requestAuthorization()
+            }
         }
     }
-    
+
+    private func migrateDataStoreIfNeeded() {
+        let defaults = UserDefaults.standard
+        let migrationKey = "CoreDataMigrationVersion"
+        let currentVersion = 2  // Increment when schema changes
+
+        let savedVersion = defaults.integer(forKey: migrationKey)
+
+        if savedVersion < currentVersion {
+            print("🔄 Migrating Core Data store from version \(savedVersion) to \(currentVersion)")
+
+            // Clear the old store
+            let coordinator = PersistenceController.shared.container.persistentStoreCoordinator
+            if let storeURL = coordinator.persistentStores.first?.url {
+                do {
+                    try coordinator.destroyPersistentStore(
+                        at: storeURL, ofType: NSSQLiteStoreType, options: nil)
+                    try coordinator.addPersistentStore(
+                        ofType: NSSQLiteStoreType, configurationName: nil, at: storeURL,
+                        options: nil)
+                    print("✅ Core Data migration complete")
+                } catch {
+                    print("❌ Migration failed: \(error)")
+                }
+            }
+
+            defaults.set(currentVersion, forKey: migrationKey)
+        }
+    }
+
     // Handle notification when app is in foreground
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         // Show notification even when app is active
         completionHandler([.banner, .sound, .badge])
     }
-    
+
     // Handle notification tap
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -38,7 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        
+
         if let from = userInfo["from"] as? String {
             // Post notification to open this conversation
             NotificationCenter.default.post(
@@ -47,20 +88,79 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 userInfo: ["from": from]
             )
         }
-        
+
         completionHandler()
     }
 }
 
+#if os(macOS)
+    @MainActor
+    final class SettingsWindowController {
+        static let shared = SettingsWindowController()
+        private var window: NSWindow?
+
+        func show(
+            settingsStore: SettingsStore,
+            accountViewModel: AccountViewModel,
+            inboxViewModel: InboxViewModel
+        ) {
+            if window == nil {
+                let rootView = SettingsWindowView()
+                    .environmentObject(settingsStore)
+                    .environmentObject(accountViewModel)
+                    .environmentObject(inboxViewModel)
+
+                let hostingController = NSHostingController(rootView: rootView)
+                let window = NSWindow(contentViewController: hostingController)
+                window.title = "Settings"
+                window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+                window.setContentSize(NSSize(width: 900, height: 600))
+                window.center()
+                self.window = window
+            }
+
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
+        }
+    }
+#endif
+
 @main
 struct PowerUserMailApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @ObservedObject private var commandRegistry = CommandRegistry.shared
+    @StateObject private var accountViewModel = AccountViewModel()
+    @StateObject private var inboxViewModel = InboxViewModel()
+    @StateObject private var settingsStore = SettingsStore()
     let persistenceController = PersistenceController.shared
+
+    init() {
+        // Ensure plugins (and their shortcuts) are loaded before building the menu
+        CommandLoader.loadAll()
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(accountViewModel)
+                .environmentObject(inboxViewModel)
+                .environmentObject(settingsStore)
+                .onReceive(
+                    NotificationCenter.default.publisher(for: Notification.Name("OpenSettings"))
+                ) { _ in
+                    #if os(macOS)
+                        let opened = NSApp.sendAction(
+                            Selector(("showSettingsWindow:")), to: nil, from: nil)
+                        if !opened {
+                            SettingsWindowController.shared.show(
+                                settingsStore: settingsStore,
+                                accountViewModel: accountViewModel,
+                                inboxViewModel: inboxViewModel
+                            )
+                        }
+                    #endif
+                }
         }
         .commands {
             CommandMenu("Actions") {
@@ -70,44 +170,57 @@ struct PowerUserMailApp: App {
                 }
                 .keyboardShortcut("k", modifiers: [.command])
 
-                Button("New Email") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("OpenCompose"), object: nil)
-                }
-                .keyboardShortcut("n", modifiers: [.command])
-                
-                Button("Toggle Sidebar") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("ToggleSidebar"), object: nil)
-                }
-                .keyboardShortcut("s", modifiers: [.command])
-                
                 Divider()
-                
-                Button("Show Unread") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter1"), object: nil)
+
+                ForEach(shortcutActions) { action in
+                    if let shortcut = parseShortcut(action.shortcut) {
+                        Button(action.title) { action.perform() }
+                            .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+                    }
                 }
-                .keyboardShortcut("1", modifiers: [.command])
-                
-                Button("Show All") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter2"), object: nil)
-                }
-                .keyboardShortcut("2", modifiers: [.command])
-                
-                Button("Show Archived") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter3"), object: nil)
-                }
-                .keyboardShortcut("3", modifiers: [.command])
-                
-                Button("Show Pinned") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("InboxFilter4"), object: nil)
-                }
-                .keyboardShortcut("4", modifiers: [.command])
             }
         }
+
+        Settings {
+            SettingsWindowView()
+                .environmentObject(settingsStore)
+                .environmentObject(accountViewModel)
+                .environmentObject(inboxViewModel)
+        }
+    }
+
+    /// Build a list of actions that have valid shortcuts defined in plugins/registry.
+    private var shortcutActions: [CommandAction] {
+        commandRegistry.commands.filter { !$0.shortcut.isEmpty }
+    }
+
+    /// Parse a human-readable shortcut string (e.g., "⌘⇧R") into SwiftUI key equivalents.
+    private func parseShortcut(_ string: String) -> (key: KeyEquivalent, modifiers: EventModifiers)?
+    {
+        var modifiers: EventModifiers = []
+        var keyChar: Character?
+
+        for ch in string {
+            switch ch {
+            case "⌘": modifiers.insert(.command)
+            case "⇧": modifiers.insert(.shift)
+            case "⌥": modifiers.insert(.option)
+            case "⌃": modifiers.insert(.control)
+            default:
+                keyChar = ch
+            }
+        }
+
+        guard let keyChar else { return nil }
+
+        let key: KeyEquivalent
+        switch keyChar {
+        case "\\":
+            key = KeyEquivalent("\\")
+        default:
+            key = KeyEquivalent(String(keyChar).lowercased().first ?? keyChar)
+        }
+
+        return (key: key, modifiers: modifiers)
     }
 }

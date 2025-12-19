@@ -18,11 +18,23 @@ protocol CommandPlugin {
     /// Display title in the command palette
     var title: String { get }
     
+    /// Subtitle/description shown below the title
+    var subtitle: String { get }
+    
     /// Keywords for search matching (e.g., ["mark", "read", "all"])
     var keywords: [String] { get }
     
     /// SF Symbol name for the icon
     var iconSystemName: String { get }
+    
+    /// Icon background color
+    var iconColor: CommandIconColor { get }
+    
+    /// Keyboard shortcut display (e.g., "⌘N")
+    var shortcut: String { get }
+
+    /// Whether to show in the command palette (still available for shortcuts if false)
+    var showInPalette: Bool { get }
     
     /// Whether the command is currently available
     var isEnabled: Bool { get }
@@ -36,10 +48,14 @@ protocol CommandPlugin {
 
 /// Extension with default values
 extension CommandPlugin {
+    var subtitle: String { "" }
     var isEnabled: Bool { true }
     var keywords: [String] { [] }
     var iconSystemName: String { "command" }
+    var iconColor: CommandIconColor { .purple }
+    var shortcut: String { "" }
     var isContextual: Bool { false }
+    var showInPalette: Bool { true }
 }
 
 /// Central registry for all commands
@@ -85,6 +101,7 @@ final class CommandRegistry: ObservableObject {
         keywords: [String] = [],
         iconSystemName: String = "command",
         isEnabled: Bool = true,
+        showInPalette: Bool = true,
         action: @escaping () -> Void
     ) {
         let command = CommandAction(
@@ -93,14 +110,27 @@ final class CommandRegistry: ObservableObject {
             keywords: keywords,
             iconSystemName: iconSystemName,
             isEnabled: isEnabled,
+            showInPalette: showInPalette,
             perform: action
         )
         commands.append(command)
     }
+
+    /// Apply user-defined shortcut overrides by command title.
+    func applyShortcutOverrides(_ overrides: [String: String]) {
+        commands = commands.map { action in
+            var updated = action
+            if let override = overrides[action.title] {
+                updated.shortcut = override
+            }
+            return updated
+        }
+    }
     
     /// Get all commands for the command palette
     func getCommands(hasSelectedConversation: Bool = false) -> [CommandAction] {
-        let filtered = hasSelectedConversation ? commands : commands.filter { !$0.isContextual }
+        let visible = commands.filter { $0.showInPalette }
+        let filtered = hasSelectedConversation ? visible : visible.filter { !$0.isContextual }
         print("\n🔍 getCommands(hasSelectedConversation: \(hasSelectedConversation)) - returning \(filtered.count) commands:")
         for cmd in filtered {
             print("  📌 \"\(cmd.title)\" keywords=\(cmd.keywords)")
@@ -136,10 +166,14 @@ final class CommandRegistry: ObservableObject {
             let action = CommandAction(
                 id: UUID(),
                 title: plugin.title,
+                subtitle: plugin.subtitle,
                 keywords: plugin.keywords,
                 iconSystemName: plugin.iconSystemName,
+                iconColor: plugin.iconColor,
+                shortcut: plugin.shortcut,
                 isEnabled: plugin.isEnabled,
                 isContextual: plugin.isContextual,
+                showInPalette: plugin.showInPalette,
                 perform: plugin.execute
             )
             newCommands.append(action)

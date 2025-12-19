@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WebKit
 
@@ -8,18 +9,71 @@ struct ChatView: View {
 
     @State private var replyText = ""
     @State private var isSending = false
-    @State private var localMessages: [Email] = [] // Optimistic messages before reload
+    @State private var localMessages: [Email] = []
     @FocusState private var isReplyFocused: Bool
-    
-    // Combined messages: original + locally sent (not yet synced)
+
     private var allMessages: [Email] {
         let existingIds = Set(conversation.messages.map { $0.id })
         let newLocals = localMessages.filter { !existingIds.contains($0.id) }
         return conversation.messages + newLocals
     }
 
+    /// Extract display name from conversation person
+    private var displayName: String {
+        let person = conversation.person
+
+        if person.hasPrefix("Topic:") {
+            return String(person.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+        }
+
+        if let nameEnd = person.firstIndex(of: "<") {
+            let name = String(person[..<nameEnd]).trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                return name
+            }
+        }
+
+        if let atIndex = person.firstIndex(of: "@") {
+            let localPart = String(person[..<atIndex])
+            let formatted =
+                localPart
+                .replacingOccurrences(of: ".", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .split(separator: " ")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+                .joined(separator: " ")
+            return formatted
+        }
+
+        return person
+    }
+
+    /// Extract email from conversation person
+    private var personEmail: String {
+        let person = conversation.person
+
+        // Handle "Name <email@example.com>" format
+        if let start = person.firstIndex(of: "<"),
+            let end = person.firstIndex(of: ">")
+        {
+            return String(person[person.index(after: start)..<end])
+        }
+
+        // If it's already an email
+        if person.contains("@") {
+            return person
+        }
+
+        return ""
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Chat Header (like demo)
+            chatHeader
+
+            Divider()
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -31,7 +85,6 @@ struct ChatView: View {
                     .padding()
                 }
                 .onChange(of: conversation) { _ in
-                    // Clear local messages when conversation updates (they're now in the real data)
                     localMessages.removeAll { msg in
                         conversation.messages.contains { $0.id == msg.id }
                     }
@@ -47,30 +100,54 @@ struct ChatView: View {
 
             Divider()
 
-            // Inline Reply Area
-            HStack(alignment: .bottom, spacing: 12) {
+            // Reply Area (demo style)
+            HStack(alignment: .center, spacing: 12) {
                 MessageInputField(
                     text: $replyText,
                     placeholder: "Type a message...",
                     onSend: sendReply
                 )
-                .frame(minHeight: 36, maxHeight: 120)
+                .frame(minHeight: 40, maxHeight: 120)
 
                 Button(action: sendReply) {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(replyText.isEmpty ? Color.gray : Color.accentColor)
+                        .frame(width: 40, height: 40)
+                        .background(replyText.isEmpty ? Color.gray.opacity(0.5) : Color.accentColor)
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(replyText.isEmpty || isSending)
             }
-            .padding()
-            .background(.ultraThinMaterial)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .navigationTitle(conversation.person)
+        .navigationTitle("")
+        .toolbar(.hidden, for: .automatic)
+    }
+
+    // MARK: - Chat Header (like demo)
+    private var chatHeader: some View {
+        HStack(spacing: 12) {
+            SenderProfilePicture(email: conversation.person, size: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if !personEmail.isEmpty {
+                    Text(personEmail)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
@@ -84,7 +161,7 @@ struct ChatView: View {
     private func sendReply() {
         guard !replyText.isEmpty else { return }
         isSending = true
-        
+
         // Capture the message content before clearing
         let messageBody = replyText
 
@@ -110,7 +187,7 @@ struct ChatView: View {
                     subject: subject,
                     body: messageBody
                 )
-                
+
                 // Create optimistic local message immediately
                 let preview = String(messageBody.prefix(100))
                 let optimisticMessage = Email(
@@ -125,7 +202,7 @@ struct ChatView: View {
                     receivedAt: Date(),
                     isRead: true
                 )
-                
+
                 // Add to local messages immediately (optimistic update)
                 await MainActor.run {
                     localMessages.append(optimisticMessage)
@@ -142,7 +219,7 @@ struct ChatView: View {
                 // Remove the optimistic message on failure
                 await MainActor.run {
                     localMessages.removeAll { $0.body == messageBody }
-                    replyText = messageBody // Restore the text so user can retry
+                    replyText = messageBody  // Restore the text so user can retry
                 }
             }
             isSending = false
@@ -153,7 +230,7 @@ struct ChatView: View {
 struct ChatBubble: View {
     let email: Email
     let myEmail: String
-    
+
     @State private var contentHeight: CGFloat = 100
 
     var isMe: Bool {
@@ -201,60 +278,60 @@ struct ChatBubble: View {
 
         return resultLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    
+
     /// Strip HTML and extract plain text for display
     var displayText: String {
         var text = cleanedBody
-        
+
         // Remove entire <style>...</style> blocks (including content)
         text = text.replacingOccurrences(
             of: "<style[^>]*>[\\s\\S]*?</style>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
-        
+
         // Remove entire <script>...</script> blocks
         text = text.replacingOccurrences(
             of: "<script[^>]*>[\\s\\S]*?</script>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
-        
+
         // Remove entire <head>...</head> section
         text = text.replacingOccurrences(
             of: "<head[^>]*>[\\s\\S]*?</head>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
-        
+
         // Remove HTML comments
         text = text.replacingOccurrences(
             of: "<!--[\\s\\S]*?-->",
             with: "",
             options: .regularExpression
         )
-        
+
         // Replace <br> and <br/> with newlines
         text = text.replacingOccurrences(
             of: "<br\\s*/?>",
             with: "\n",
             options: [.regularExpression, .caseInsensitive]
         )
-        
+
         // Replace </p>, </div>, </tr> with newlines for paragraph breaks
         text = text.replacingOccurrences(
             of: "</(?:p|div|tr|li|h[1-6])>",
             with: "\n",
             options: [.regularExpression, .caseInsensitive]
         )
-        
+
         // Remove remaining HTML tags
         text = text.replacingOccurrences(
             of: "<[^>]+>",
             with: "",
             options: .regularExpression
         )
-        
+
         // Decode common HTML entities
         text = text.replacingOccurrences(of: "&nbsp;", with: " ")
         text = text.replacingOccurrences(of: "&amp;", with: "&")
@@ -269,17 +346,18 @@ struct ChatBubble: View {
         text = text.replacingOccurrences(of: "&bull;", with: "•")
         text = text.replacingOccurrences(of: "&copy;", with: "©")
         text = text.replacingOccurrences(of: "&reg;", with: "®")
-        
+
         // Decode numeric HTML entities (&#123; format)
         let numericEntityPattern = "&#(\\d+);"
         if let regex = try? NSRegularExpression(pattern: numericEntityPattern) {
             let range = NSRange(text.startIndex..., in: text)
             let matches = regex.matches(in: text, range: range)
-            
+
             for match in matches.reversed() {
                 if let codeRange = Range(match.range(at: 1), in: text),
-                   let code = Int(text[codeRange]),
-                   let scalar = Unicode.Scalar(code) {
+                    let code = Int(text[codeRange]),
+                    let scalar = Unicode.Scalar(code)
+                {
                     let char = String(Character(scalar))
                     if let fullRange = Range(match.range, in: text) {
                         text.replaceSubrange(fullRange, with: char)
@@ -287,42 +365,48 @@ struct ChatBubble: View {
                 }
             }
         }
-        
+
         // Clean up multiple newlines
         text = text.replacingOccurrences(
             of: "\\n{3,}",
             with: "\n\n",
             options: .regularExpression
         )
-        
+
         // Clean up multiple spaces
         text = text.replacingOccurrences(
             of: "[ \\t]+",
             with: " ",
             options: .regularExpression
         )
-        
+
         // Clean up spaces around newlines
         text = text.replacingOccurrences(
             of: " *\\n *",
             with: "\n",
             options: .regularExpression
         )
-        
+
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    
+
     /// Check if content is HTML
     var isHTMLContent: Bool {
         let body = cleanedBody.lowercased()
-        return body.contains("<html") || body.contains("<body") || body.contains("<div") || 
-               body.contains("<table") || body.contains("<p>") || body.contains("<br")
+        return body.contains("<html") || body.contains("<body") || body.contains("<div")
+            || body.contains("<table") || body.contains("<p>") || body.contains("<br")
+    }
+
+    private var bubbleColor: Color {
+        isMe ? Color.accentColor : Color(nsColor: .systemGray).opacity(0.35)
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            // For HTML content, use minimal spacing to allow more width
-            if isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
+        HStack(alignment: .bottom, spacing: 0) {
+            if isMe {
+                // Push "my" messages to the right with consistent padding
+                Spacer(minLength: 60)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 if !isMe && !email.subject.isEmpty {
@@ -354,12 +438,14 @@ struct ChatBubble: View {
                     .foregroundStyle(isMe ? .white.opacity(0.8) : .secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(isHTMLContent ? 8 : 12)
-            .background(isMe ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(16)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                ChatBubbleShape(isMe: isMe)
+                    .fill(bubbleColor)
+            )
             .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-            .frame(maxWidth: isHTMLContent ? .infinity : 500, alignment: isMe ? .trailing : .leading)
+            .frame(maxWidth: isHTMLContent ? 600 : 450, alignment: isMe ? .trailing : .leading)
             .contextMenu {
                 if PromotedThreadStore.shared.isPromoted(threadId: email.threadId) {
                     Button {
@@ -376,9 +462,125 @@ struct ChatBubble: View {
                 }
             }
 
-            if !isMe { Spacer(minLength: isHTMLContent ? 20 : 50) }
+            if !isMe {
+                // Push "their" messages to the left with consistent padding
+                Spacer(minLength: 60)
+            }
         }
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+    }
+}
+
+// MARK: - Chat Bubble Shape with integrated tail (iMessage style)
+struct ChatBubbleShape: Shape {
+    let isMe: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width
+        let height = rect.height
+        let radius: CGFloat = min(18, min(width, height) / 4)
+        let tailSize: CGFloat = 8
+
+        var path = Path()
+
+        if isMe {
+            // Right-aligned bubble with tail on bottom-right
+            // Start from top-left corner
+            path.move(to: CGPoint(x: radius, y: 0))
+
+            // Top edge
+            path.addLine(to: CGPoint(x: width - radius - tailSize, y: 0))
+
+            // Top-right corner (smooth curve)
+            path.addQuadCurve(
+                to: CGPoint(x: width - tailSize, y: radius),
+                control: CGPoint(x: width - tailSize, y: 0)
+            )
+
+            // Right edge down to before the tail
+            path.addLine(to: CGPoint(x: width - tailSize, y: height - radius - tailSize))
+
+            // Curve into the tail
+            path.addQuadCurve(
+                to: CGPoint(x: width, y: height),
+                control: CGPoint(x: width - tailSize, y: height)
+            )
+
+            // Curve back from the tail tip
+            path.addQuadCurve(
+                to: CGPoint(x: width - tailSize - radius, y: height),
+                control: CGPoint(x: width - tailSize - 2, y: height)
+            )
+
+            // Bottom edge
+            path.addLine(to: CGPoint(x: radius, y: height))
+
+            // Bottom-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: 0, y: height - radius),
+                control: CGPoint(x: 0, y: height)
+            )
+
+            // Left edge
+            path.addLine(to: CGPoint(x: 0, y: radius))
+
+            // Top-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: radius, y: 0),
+                control: CGPoint(x: 0, y: 0)
+            )
+
+        } else {
+            // Left-aligned bubble with tail on bottom-left
+            // Start from top-left corner (after tail space)
+            path.move(to: CGPoint(x: tailSize + radius, y: 0))
+
+            // Top edge
+            path.addLine(to: CGPoint(x: width - radius, y: 0))
+
+            // Top-right corner
+            path.addQuadCurve(
+                to: CGPoint(x: width, y: radius),
+                control: CGPoint(x: width, y: 0)
+            )
+
+            // Right edge
+            path.addLine(to: CGPoint(x: width, y: height - radius))
+
+            // Bottom-right corner
+            path.addQuadCurve(
+                to: CGPoint(x: width - radius, y: height),
+                control: CGPoint(x: width, y: height)
+            )
+
+            // Bottom edge to before the tail
+            path.addLine(to: CGPoint(x: tailSize + radius, y: height))
+
+            // Curve into the tail from the right
+            path.addQuadCurve(
+                to: CGPoint(x: 0, y: height),
+                control: CGPoint(x: tailSize + 2, y: height)
+            )
+
+            // Curve back up from tail tip
+            path.addQuadCurve(
+                to: CGPoint(x: tailSize, y: height - radius - tailSize),
+                control: CGPoint(x: tailSize, y: height)
+            )
+
+            // Left edge
+            path.addLine(to: CGPoint(x: tailSize, y: radius))
+
+            // Top-left corner
+            path.addQuadCurve(
+                to: CGPoint(x: tailSize + radius, y: 0),
+                control: CGPoint(x: tailSize, y: 0)
+            )
+        }
+
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -396,36 +598,37 @@ struct ScrollTransparentWebView: NSViewRepresentable {
     let htmlContent: String
     let isMe: Bool
     @Binding var contentHeight: CGFloat
-    
+
     func makeNSView(context: Context) -> ScrollPassthroughWebView {
         let config = WKWebViewConfiguration()
         let webView = ScrollPassthroughWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
-        
+
         // Disable all scrolling on the WebView itself
         webView.enclosingScrollView?.hasVerticalScroller = false
         webView.enclosingScrollView?.hasHorizontalScroller = false
-        
+
         return webView
     }
-    
+
     func updateNSView(_ nsView: ScrollPassthroughWebView, context: Context) {
         let styledHTML = wrapWithStyling(htmlContent)
         nsView.loadHTMLString(styledHTML, baseURL: nil)
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
-    class Coordinator: NSObject, WKNavigationDelegate {
+
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var parent: ScrollTransparentWebView
-        
+
         init(_ parent: ScrollTransparentWebView) {
             self.parent = parent
         }
-        
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Calculate content height after load - no cap, let it expand fully
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
@@ -437,15 +640,55 @@ struct ScrollTransparentWebView: NSViewRepresentable {
                 }
             }
         }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            if navigationAction.navigationType == .linkActivated,
+                let url = navigationAction.request.url,
+                shouldOpenExternally(url: url)
+            {
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Handles target="_blank" links.
+            if let url = navigationAction.request.url, shouldOpenExternally(url: url) {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
+        }
+
+        private func shouldOpenExternally(url: URL) -> Bool {
+            guard let scheme = url.scheme?.lowercased() else { return false }
+            switch scheme {
+            case "http", "https", "mailto", "tel":
+                return true
+            default:
+                return false
+            }
+        }
     }
-    
+
     private func wrapWithStyling(_ content: String) -> String {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        
+
         let textColor: String
         let linkColor: String
         let bgColor: String
-        
+
         if isMe {
             textColor = "#ffffff"
             linkColor = "#b3d9ff"
@@ -455,63 +698,63 @@ struct ScrollTransparentWebView: NSViewRepresentable {
             linkColor = isDark ? "#6cb6ff" : "#0066cc"
             bgColor = "transparent"
         }
-        
+
         return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                * { box-sizing: border-box; }
-                html, body {
-                    margin: 0;
-                    padding: 0;
-                    overflow: hidden !important;
-                    background: \(bgColor) !important;
-                }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
-                    font-size: 13px;
-                    line-height: 1.5;
-                    color: \(textColor) !important;
-                    word-wrap: break-word;
-                    overflow-wrap: break-word;
-                }
-                /* Override any background colors in email */
-                body *, div, table, td, th, p, span {
-                    background-color: transparent !important;
-                    color: \(textColor) !important;
-                }
-                a { color: \(linkColor) !important; text-decoration: none; }
-                a:hover { text-decoration: underline; }
-                img { max-width: 100%; height: auto; border-radius: 6px; }
-                table { border-collapse: collapse; max-width: 100%; }
-                pre, code {
-                    font-family: 'SF Mono', Menlo, monospace;
-                    font-size: 12px;
-                    background: rgba(128,128,128,0.2) !important;
-                    border-radius: 4px;
-                    padding: 2px 4px;
-                }
-                pre { padding: 8px; overflow-x: auto; }
-                blockquote {
-                    border-left: 3px solid \(linkColor);
-                    margin: 0.5em 0;
-                    padding-left: 10px;
-                    opacity: 0.8;
-                }
-                h1, h2, h3, h4, h5, h6 {
-                    margin: 0.5em 0 0.3em;
-                    line-height: 1.3;
-                }
-                p { margin: 0.4em 0; }
-                ul, ol { padding-left: 1.2em; margin: 0.4em 0; }
-                hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 0.5em 0; }
-            </style>
-        </head>
-        <body>\(content)</body>
-        </html>
-        """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        overflow: hidden !important;
+                        background: \(bgColor) !important;
+                    }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+                        font-size: 13px;
+                        line-height: 1.5;
+                        color: \(textColor) !important;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                    }
+                    /* Override any background colors in email */
+                    body *, div, table, td, th, p, span {
+                        background-color: transparent !important;
+                        color: \(textColor) !important;
+                    }
+                    a { color: \(linkColor) !important; text-decoration: none; }
+                    a:hover { text-decoration: underline; }
+                    img { max-width: 100%; height: auto; border-radius: 6px; }
+                    table { border-collapse: collapse; max-width: 100%; }
+                    pre, code {
+                        font-family: 'SF Mono', Menlo, monospace;
+                        font-size: 12px;
+                        background: rgba(128,128,128,0.2) !important;
+                        border-radius: 4px;
+                        padding: 2px 4px;
+                    }
+                    pre { padding: 8px; overflow-x: auto; }
+                    blockquote {
+                        border-left: 3px solid \(linkColor);
+                        margin: 0.5em 0;
+                        padding-left: 10px;
+                        opacity: 0.8;
+                    }
+                    h1, h2, h3, h4, h5, h6 {
+                        margin: 0.5em 0 0.3em;
+                        line-height: 1.3;
+                    }
+                    p { margin: 0.4em 0; }
+                    ul, ol { padding-left: 1.2em; margin: 0.4em 0; }
+                    hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 0.5em 0; }
+                </style>
+            </head>
+            <body>\(content)</body>
+            </html>
+            """
     }
 }
 
@@ -520,11 +763,11 @@ struct MessageInputField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var onSend: () -> Void
-    
+
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         let textView = MessageTextView()
-        
+
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.font = .systemFont(ofSize: 14)
@@ -533,57 +776,58 @@ struct MessageInputField: NSViewRepresentable {
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.autoresizingMask = [.width]
         textView.allowsUndo = true
-        
+
         // Store reference for keyboard handling
         textView.onSend = onSend
-        
+
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
-        
+
         // Styling
         scrollView.wantsLayer = true
         scrollView.layer?.cornerRadius = 18
         scrollView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         scrollView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.3).cgColor
         scrollView.layer?.borderWidth = 1
-        
+
         // Set initial text
         textView.string = text
-        
+
         return scrollView
     }
-    
+
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? MessageTextView else { return }
-        
+
         if textView.string != text {
             textView.string = text
         }
         textView.onSend = onSend
-        
+
         // Update placeholder visibility
         textView.needsDisplay = true
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: MessageInputField
-        
+
         init(_ parent: MessageInputField) {
             self.parent = parent
         }
-        
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
@@ -595,28 +839,28 @@ struct MessageInputField: NSViewRepresentable {
 class MessageTextView: NSTextView {
     var onSend: (() -> Void)?
     var placeholderString: String = "Type a message..."
-    
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        
+
         // Draw placeholder if empty - at the exact same position as text would appear
         if string.isEmpty, let textContainer = textContainer, let layoutManager = layoutManager {
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.placeholderTextColor,
-                .font: font ?? .systemFont(ofSize: 14)
+                .font: font ?? .systemFont(ofSize: 14),
             ]
-            
+
             // Get the exact position where text would be drawn
             let glyphRange = layoutManager.glyphRange(for: textContainer)
             var textRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
             textRect.origin.x += textContainerOrigin.x
             textRect.origin.y += textContainerOrigin.y
-            
+
             let placeholder = NSAttributedString(string: placeholderString, attributes: attrs)
             placeholder.draw(at: textRect.origin)
         }
     }
-    
+
     override func keyDown(with event: NSEvent) {
         // Enter key
         if event.keyCode == 36 {
@@ -634,4 +878,3 @@ class MessageTextView: NSTextView {
         }
     }
 }
-

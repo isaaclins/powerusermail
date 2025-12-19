@@ -1,8 +1,11 @@
+import CryptoKit
+// MARK: - MD5 Hash Extension for Gravatar
 import Foundation
 
 enum MailProvider: String, CaseIterable, Codable, Identifiable {
     case gmail
     case outlook
+    case imap
 
     var id: String { rawValue }
     var displayName: String {
@@ -11,6 +14,8 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "Gmail"
         case .outlook:
             return "Outlook"
+        case .imap:
+            return "IMAP"
         }
     }
 
@@ -20,6 +25,8 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "envelope.open.fill"
         case .outlook:
             return "envelope.circle.fill"
+        case .imap:
+            return "server.rack"
         }
     }
 
@@ -29,7 +36,51 @@ enum MailProvider: String, CaseIterable, Codable, Identifiable {
             return "GmailLogo"
         case .outlook:
             return "OutlookLogo"
+        case .imap:
+            return ""  // Will use system icon instead
         }
+    }
+
+    /// Whether this provider uses OAuth (vs direct credentials)
+    var usesOAuth: Bool {
+        switch self {
+        case .gmail, .outlook:
+            return true
+        case .imap:
+            return false
+        }
+    }
+}
+
+// MARK: - IMAP Configuration
+struct IMAPConfiguration: Codable, Equatable {
+    var imapHost: String
+    var imapPort: Int
+    var smtpHost: String
+    var smtpPort: Int
+    var username: String
+    var password: String  // Will be stored in Keychain
+    var useSSL: Bool
+    var useTLS: Bool
+
+    init(
+        imapHost: String = "",
+        imapPort: Int = 993,
+        smtpHost: String = "",
+        smtpPort: Int = 587,
+        username: String = "",
+        password: String = "",
+        useSSL: Bool = true,
+        useTLS: Bool = true
+    ) {
+        self.imapHost = imapHost
+        self.imapPort = imapPort
+        self.smtpHost = smtpHost
+        self.smtpPort = smtpPort
+        self.username = username
+        self.password = password
+        self.useSSL = useSSL
+        self.useTLS = useTLS
     }
 }
 
@@ -59,7 +110,7 @@ struct Account: Identifiable, Codable, Equatable {
         self.isAuthenticated = isAuthenticated
         self.profilePictureURL = profilePictureURL
     }
-    
+
     /// Returns the profile picture URL or a Gravatar fallback
     var effectiveProfilePictureURL: URL? {
         if let urlString = profilePictureURL, let url = URL(string: urlString) {
@@ -67,21 +118,17 @@ struct Account: Identifiable, Codable, Equatable {
         }
         return gravatarURL
     }
-    
+
     /// Gravatar URL based on email hash
     var gravatarURL: URL? {
         let email = emailAddress.lowercased().trimmingCharacters(in: .whitespaces)
         guard let data = email.data(using: .utf8) else { return nil }
-        
+
         // MD5 hash for Gravatar
         let hash = data.md5Hash
         return URL(string: "https://www.gravatar.com/avatar/\(hash)?s=200&d=identicon")
     }
 }
-
-// MARK: - MD5 Hash Extension for Gravatar
-import Foundation
-import CryptoKit
 
 extension Data {
     var md5Hash: String {
@@ -192,7 +239,7 @@ struct Conversation: Identifiable, Hashable {
     var latestMessage: Email? {
         messages.max(by: { $0.receivedAt < $1.receivedAt })
     }
-    
+
     /// Returns true if conversation has unread messages and hasn't been locally marked as read
     var hasUnread: Bool {
         // If locally marked as read, consider it read
@@ -202,7 +249,7 @@ struct Conversation: Identifiable, Hashable {
         // Otherwise, check the server-side read status
         return messages.contains { !$0.isRead }
     }
-    
+
     var unreadCount: Int {
         if ConversationStateStore.shared.isRead(conversationId: id) {
             return 0
@@ -216,7 +263,7 @@ extension Date {
     func relativeTimeString() -> String {
         let now = Date()
         let interval = now.timeIntervalSince(self)
-        
+
         if interval < 60 {
             return "Just now"
         } else if interval < 3600 {

@@ -1,5 +1,44 @@
+import AppKit
 import Foundation
 import SwiftUI
+
+// MARK: - Vertical-only ScrollView wrapper
+struct VerticalScrollView<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.horizontalScrollElasticity = .none
+        scrollView.verticalScrollElasticity = .automatic
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        scrollView.documentView = hostingView
+
+        // Constrain hosting view width to scroll view width
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+        ])
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        if let hostingView = scrollView.documentView as? NSHostingView<Content> {
+            hostingView.rootView = content
+        }
+    }
+}
 
 struct CommandPaletteView: View {
     @Binding var isPresented: Bool
@@ -11,63 +50,85 @@ struct CommandPaletteView: View {
 
     @State private var selectedIndex: Int = 0
     @State private var selectedSection: SearchSection = .commands
+    @State private var shouldScrollToSelection: Bool = false
     @FocusState private var isFocused: Bool
-    
+
     enum SearchSection {
-        case commands, people
+        case commands, recent
     }
 
-    // Computed property that filters based on current searchText
     private var filteredResults: [CommandAction] {
         filterActions(query: searchText, actions: actions)
     }
-    
-    // Filter conversations/people based on search
-    private var filteredPeople: [Conversation] {
-        guard !searchText.isEmpty else { return [] }
-        let query = searchText.lowercased()
-        return conversations.filter { conversation in
-            conversation.person.lowercased().contains(query) ||
-            conversation.messages.contains { msg in
-                msg.from.lowercased().contains(query) ||
-                msg.to.joined(separator: " ").lowercased().contains(query)
-            }
-        }.prefix(5).map { $0 } // Limit to 5 results
+
+    private var settingsResults: [CommandAction] {
+        filteredResults.filter { $0.keywords.contains("__settings") }
     }
-    
-    // Pure function for filtering - no side effects
-    private func filterActions(query: String, actions: [CommandAction]) -> [CommandAction] {
-        if query.isEmpty { 
-            print("\n> got: \"\" (empty)")
-            print("> showing all \(actions.count) commands")
-            return actions 
+
+    private var nonSettingsResults: [CommandAction] {
+        filteredResults.filter { !$0.keywords.contains("__settings") }
+    }
+
+    private var commandResults: [CommandAction] {
+        settingsResults + nonSettingsResults
+    }
+
+    private var recentPeople: [Conversation] {
+        // Show recent conversations when search is empty, or filter when searching
+        if searchText.isEmpty {
+            return Array(conversations.prefix(5))
         }
-        
+
+        let query = searchText.lowercased()
+        let matching = conversations.filter { conversation in
+            conversation.person.lowercased().contains(query)
+                || conversation.messages.contains { msg in
+                    msg.from.lowercased().contains(query)
+                }
+        }
+
+        var seenEmails = Set<String>()
+        var unique: [Conversation] = []
+
+        for conversation in matching {
+            let normalizedEmail = extractEmail(from: conversation.person).lowercased()
+            if !seenEmails.contains(normalizedEmail) {
+                seenEmails.insert(normalizedEmail)
+                unique.append(conversation)
+            }
+        }
+
+        return Array(unique.prefix(5))
+    }
+
+    private func extractEmail(from string: String) -> String {
+        if let start = string.firstIndex(of: "<"),
+            let end = string.firstIndex(of: ">"),
+            start < end
+        {
+            return String(string[string.index(after: start)..<end])
+        }
+        return string.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func filterActions(query: String, actions: [CommandAction]) -> [CommandAction] {
+        if query.isEmpty { return actions }
+
         let queryLower = query.lowercased()
-        print("\n> got: \"\(queryLower)\"")
-        print("> searching through \(actions.count) commands...")
-        
-        // Score each action using fuzzy matching
+
         let scored = actions.compactMap { action -> (action: CommandAction, score: Int)? in
             let titleLower = action.title.lowercased()
-            
-            // Try different matching strategies and take the best score
             var bestScore = 0
-            var matchReason = ""
-            
-            // 1. Exact substring match (highest priority)
+
             if titleLower.contains(queryLower) {
-                let score = 1000 + (100 - titleLower.count)
-                bestScore = max(bestScore, score)
-                matchReason = "exact substring in title"
+                bestScore = max(bestScore, 1000 + (100 - titleLower.count))
             }
-            
-            // 2. Word prefix matching - "mar" matches "Mark All as Read"
+
             let titleWords = titleLower.split(separator: " ").map(String.init)
             let queryWords = queryLower.split(separator: " ").map(String.init)
-            
+
             var wordPrefixScore = 0
-            var allQueryWordsMatch = true
+            var allMatch = true
             for qWord in queryWords {
                 var matched = false
                 for tWord in titleWords {
@@ -77,131 +138,78 @@ struct CommandPaletteView: View {
                         break
                     }
                 }
-                if !matched {
-                    allQueryWordsMatch = false
-                }
+                if !matched { allMatch = false }
             }
-            if allQueryWordsMatch && !queryWords.isEmpty && wordPrefixScore > bestScore {
+            if allMatch && !queryWords.isEmpty && wordPrefixScore > bestScore {
                 bestScore = wordPrefixScore
-                matchReason = "word prefix match"
             }
-            
-            // 3. Fuzzy match - characters appear in order (like Raycast)
+
             let fuzzyScore = fuzzyMatch(query: queryLower, target: titleLower)
-            if fuzzyScore > bestScore {
-                bestScore = fuzzyScore
-                matchReason = "fuzzy match in title"
-            }
-            
-            // 4. Keyword matching (lower priority)
+            if fuzzyScore > bestScore { bestScore = fuzzyScore }
+
             for keyword in action.keywords {
-                let keywordLower = keyword.lowercased()
-                if keywordLower.hasPrefix(queryLower) && 30 > bestScore {
+                let kw = keyword.lowercased()
+                if kw.hasPrefix(queryLower) && 30 > bestScore {
                     bestScore = 30
-                    matchReason = "keyword prefix: \(keyword)"
-                } else if keywordLower.contains(queryLower) && 20 > bestScore {
+                } else if kw.contains(queryLower) && 20 > bestScore {
                     bestScore = 20
-                    matchReason = "keyword contains: \(keyword)"
-                } else if fuzzyMatch(query: queryLower, target: keywordLower) > 0 && 10 > bestScore {
-                    bestScore = 10
-                    matchReason = "keyword fuzzy: \(keyword)"
                 }
             }
-            
-            if bestScore > 0 {
-                print("  - \"\(action.title)\" score=\(bestScore) (\(matchReason))")
-            }
-            
+
             return bestScore > 0 ? (action, bestScore) : nil
         }
-        
-        // Sort by score (highest first)
-        let results = scored
-            .sorted { $0.score > $1.score }
-            .map { $0.action }
-        
-        print("> possible recommendations:")
-        for action in results {
-            print("  - \"\(action.title)\"")
-        }
-        print("")
-        
-        return results
+
+        return scored.sorted { $0.score > $1.score }.map { $0.action }
     }
-    
-    /// Fuzzy match - characters must appear in order, consecutive matches score higher
-    /// "nml" matches "New eMaiL", "mar" matches "MARk all as read"
+
     private func fuzzyMatch(query: String, target: String) -> Int {
         guard !query.isEmpty else { return 0 }
-        
+
         var queryIndex = query.startIndex
         var targetIndex = target.startIndex
         var score = 0
-        var consecutiveMatches = 0
-        var lastMatchWasConsecutive = false
-        
+        var consecutive = 0
+        var lastWasConsecutive = false
+
         while queryIndex < query.endIndex && targetIndex < target.endIndex {
-            let queryChar = query[queryIndex]
-            let targetChar = target[targetIndex]
-            
-            if queryChar == targetChar {
-                // Character matched
+            if query[queryIndex] == target[targetIndex] {
                 score += 10
-                
-                // Bonus for consecutive matches
-                if lastMatchWasConsecutive {
-                    consecutiveMatches += 1
-                    score += consecutiveMatches * 5
+                if lastWasConsecutive {
+                    consecutive += 1
+                    score += consecutive * 5
                 } else {
-                    consecutiveMatches = 1
+                    consecutive = 1
                 }
-                lastMatchWasConsecutive = true
-                
-                // Bonus for matching at start of word
-                if targetIndex == target.startIndex || target[target.index(before: targetIndex)] == " " {
+                lastWasConsecutive = true
+                if targetIndex == target.startIndex
+                    || target[target.index(before: targetIndex)] == " "
+                {
                     score += 15
                 }
-                
                 queryIndex = query.index(after: queryIndex)
             } else {
-                lastMatchWasConsecutive = false
+                lastWasConsecutive = false
             }
-            
             targetIndex = target.index(after: targetIndex)
         }
-        
-        // All query characters must be found
-        if queryIndex < query.endIndex {
-            return 0
-        }
-        
-        // Bonus for shorter targets (tighter match)
-        score += max(0, 50 - target.count)
-        
-        return score
+
+        return queryIndex < query.endIndex ? 0 : score + max(0, 50 - target.count)
     }
 
-    private var totalItemCount: Int {
-        filteredResults.count + filteredPeople.count
-    }
-    
     var body: some View {
         VStack(spacing: 0) {
-            // Search Bar
+            // Search Bar (demo style)
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.title3)
+                    .font(.system(size: 18))
                     .foregroundStyle(.secondary)
 
-                TextField("Type a command or contact...", text: $searchText)
+                TextField("Search emails, commands, contacts...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.title3)
-                    .foregroundColor(.white)
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary)
                     .focused($isFocused)
-                    .onSubmit {
-                        executeSelected()
-                    }
-                    // Intercept arrow keys for navigation
+                    .onSubmit { executeSelected() }
                     .onKeyPress(.downArrow) {
                         moveSelection(1)
                         return .handled
@@ -218,143 +226,179 @@ struct CommandPaletteView: View {
                         isPresented = false
                         return .handled
                     }
+
+                Spacer()
+
+                Text("esc to close")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
             }
-            .padding()
-            .background(.ultraThinMaterial)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
 
             Divider()
+                .background(Color.secondary.opacity(0.3))
 
-            // Results List
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        // Commands Section
-                        if !filteredResults.isEmpty {
-                            SectionHeader(title: "Commands")
-                            
-                            ForEach(Array(filteredResults.enumerated()), id: \.element.id) {
-                                index, action in
-                                CommandRow(action: action, isSelected: selectedSection == .commands && index == selectedIndex)
-                                    .id("cmd-\(index)")
+            // Results - using custom NSScrollView wrapper to disable horizontal scrolling
+            VerticalScrollView {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    // ACTIONS Section
+                    if !commandResults.isEmpty {
+                        if !settingsResults.isEmpty {
+                            Section {
+                                ForEach(Array(settingsResults.enumerated()), id: \.offset) {
+                                    index, action in
+                                    let globalIndex = index
+                                    CommandRowDemo(
+                                        action: action,
+                                        isSelected: selectedSection == .commands
+                                            && globalIndex == selectedIndex
+                                    )
+                                    .id("cmd-\(searchText)-\(globalIndex)")
                                     .onTapGesture {
                                         onSelect(action)
                                         isPresented = false
                                     }
-                                    .onHover { hovering in
-                                        if hovering { 
+                                    .onHover {
+                                        if $0 {
                                             selectedSection = .commands
-                                            selectedIndex = index 
+                                            selectedIndex = globalIndex
                                         }
                                     }
+                                }
+                            } header: {
+                                SectionHeaderDemo(title: "SETTINGS")
                             }
                         }
-                        
-                        // People Section
-                        if !filteredPeople.isEmpty {
-                            SectionHeader(title: "People")
-                            
-                            ForEach(Array(filteredPeople.enumerated()), id: \.element.id) {
-                                index, conversation in
-                                PersonRow(conversation: conversation, isSelected: selectedSection == .people && index == selectedIndex)
-                                    .id("person-\(index)")
+
+                        if !nonSettingsResults.isEmpty {
+                            Section {
+                                ForEach(Array(nonSettingsResults.enumerated()), id: \.offset) {
+                                    index, action in
+                                    let globalIndex = settingsResults.count + index
+                                    CommandRowDemo(
+                                        action: action,
+                                        isSelected: selectedSection == .commands
+                                            && globalIndex == selectedIndex
+                                    )
+                                    .id("cmd-\(searchText)-\(globalIndex)")
                                     .onTapGesture {
-                                        onSelectConversation(conversation)
+                                        onSelect(action)
                                         isPresented = false
                                     }
-                                    .onHover { hovering in
-                                        if hovering { 
-                                            selectedSection = .people
-                                            selectedIndex = index 
+                                    .onHover {
+                                        if $0 {
+                                            selectedSection = .commands
+                                            selectedIndex = globalIndex
                                         }
                                     }
+                                }
+                            } header: {
+                                SectionHeaderDemo(
+                                    title: searchText.isEmpty ? "ACTIONS" : "COMMANDS")
                             }
                         }
-                        
-                        // No results
-                        if filteredResults.isEmpty && filteredPeople.isEmpty && !searchText.isEmpty {
-                            ContentUnavailableView(
-                                "No Results Found", systemImage: "magnifyingglass"
-                            )
-                            .padding(.vertical, 40)
-                        }
-                        
-                        // Empty state
-                        if searchText.isEmpty && filteredResults.isEmpty {
-                            ContentUnavailableView(
-                                "No Commands Found", systemImage: "command.slash"
-                            )
-                            .padding(.vertical, 40)
+                    }
+
+                    // RECENT Section
+                    if !recentPeople.isEmpty {
+                        Section {
+                            ForEach(Array(recentPeople.enumerated()), id: \.offset) {
+                                index, conversation in
+                                RecentRowDemo(
+                                    conversation: conversation,
+                                    isSelected: selectedSection == .recent
+                                        && index == selectedIndex
+                                )
+                                .id("recent-\(searchText)-\(index)")
+                                .onTapGesture {
+                                    onSelectConversation(conversation)
+                                    isPresented = false
+                                }
+                                .onHover {
+                                    if $0 {
+                                        selectedSection = .recent
+                                        selectedIndex = index
+                                    }
+                                }
+                            }
+                        } header: {
+                            SectionHeaderDemo(title: "RECENT")
                         }
                     }
-                    .id(searchText) // Force re-render when search changes
-                }
-                .frame(maxHeight: 350)
-                .onChange(of: selectedIndex) { _, newIndex in
-                    withAnimation {
-                        let scrollId = selectedSection == .commands ? "cmd-\(newIndex)" : "person-\(newIndex)"
-                        proxy.scrollTo(scrollId, anchor: .center)
+
+                    if commandResults.isEmpty && recentPeople.isEmpty && !searchText.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.secondary)
+                            Text("No results found")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
                     }
                 }
             }
+            .frame(maxHeight: 400)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-        .frame(width: 600)
-        .environment(\.colorScheme, .dark)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
+        .frame(width: 500)
         .onAppear {
             selectedIndex = 0
             selectedSection = .commands
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isFocused = true
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { isFocused = true }
         }
         .onChange(of: searchText) { _, _ in
             selectedIndex = 0
-            selectedSection = filteredResults.isEmpty && !filteredPeople.isEmpty ? .people : .commands
+            selectedSection = commandResults.isEmpty && !recentPeople.isEmpty ? .recent : .commands
         }
     }
 
     private func moveSelection(_ direction: Int) {
-        let commandCount = filteredResults.count
-        let peopleCount = filteredPeople.count
-        
+        let cmdCount = commandResults.count
+        let recentCount = recentPeople.count
+
+        // Enable auto-scroll for keyboard navigation
+        shouldScrollToSelection = true
+
         if direction > 0 {
-            // Moving down
             if selectedSection == .commands {
-                if selectedIndex < commandCount - 1 {
+                if selectedIndex < cmdCount - 1 {
                     selectedIndex += 1
-                } else if peopleCount > 0 {
-                    selectedSection = .people
+                } else if recentCount > 0 {
+                    selectedSection = .recent
                     selectedIndex = 0
                 }
             } else {
-                if selectedIndex < peopleCount - 1 {
+                if selectedIndex < recentCount - 1 {
                     selectedIndex += 1
-                } else if commandCount > 0 {
+                } else if cmdCount > 0 {
                     selectedSection = .commands
                     selectedIndex = 0
                 }
             }
         } else {
-            // Moving up
             if selectedSection == .commands {
                 if selectedIndex > 0 {
                     selectedIndex -= 1
-                } else if peopleCount > 0 {
-                    selectedSection = .people
-                    selectedIndex = peopleCount - 1
+                } else if recentCount > 0 {
+                    selectedSection = .recent
+                    selectedIndex = recentCount - 1
                 }
             } else {
                 if selectedIndex > 0 {
                     selectedIndex -= 1
-                } else if commandCount > 0 {
+                } else if cmdCount > 0 {
                     selectedSection = .commands
-                    selectedIndex = commandCount - 1
+                    selectedIndex = cmdCount - 1
                 }
             }
         }
@@ -362,123 +406,153 @@ struct CommandPaletteView: View {
 
     private func executeSelected() {
         if selectedSection == .commands {
-            guard !filteredResults.isEmpty else { return }
-            let action = filteredResults[selectedIndex]
+            guard !commandResults.isEmpty else { return }
+            let action = commandResults[selectedIndex]
             guard action.isEnabled else { return }
             isPresented = false
             onSelect(action)
         } else {
-            guard !filteredPeople.isEmpty else { return }
-            let conversation = filteredPeople[selectedIndex]
+            guard !recentPeople.isEmpty else { return }
             isPresented = false
-            onSelectConversation(conversation)
+            onSelectConversation(recentPeople[selectedIndex])
         }
     }
 }
 
-struct SectionHeader: View {
+// MARK: - Demo Style Section Header
+struct SectionHeaderDemo: View {
     let title: String
-    
+
     var body: some View {
         HStack {
             Text(title)
-                .font(.caption)
-                .fontWeight(.semibold)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .tracking(1)
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-    }
-}
-
-struct PersonRow: View {
-    let conversation: Conversation
-    let isSelected: Bool
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(avatarGradient)
-                    .frame(width: 28, height: 28)
-                
-                Text(initials)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(conversation.person)
-                    .font(.body)
-                    .foregroundStyle(isSelected ? .white : .primary)
-                
-                if let lastMessage = conversation.latestMessage {
-                    Text(lastMessage.subject)
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? .white.opacity(0.7) : .secondary)
-                        .lineLimit(1)
-                }
-            }
-            
-            Spacer()
-            
-            Text("Contact")
-                .font(.caption)
-                .foregroundStyle(isSelected ? .white.opacity(0.6) : Color.secondary.opacity(0.6))
-        }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 10)
-        .background(isSelected ? Color.accentColor : Color.clear)
-        .contentShape(Rectangle())
-    }
-    
-    private var initials: String {
-        let words = conversation.person.split(separator: " ").prefix(2)
-        return words.compactMap { $0.first.map(String.init) }.joined()
-    }
-    
-    private var avatarGradient: LinearGradient {
-        let colors = [
-            [Color.blue, Color.purple],
-            [Color.orange, Color.red],
-            [Color.green, Color.teal],
-            [Color.pink, Color.purple],
-            [Color.indigo, Color.blue]
-        ]
-        let index = abs(conversation.person.hashValue) % colors.count
-        return LinearGradient(colors: colors[index], startPoint: .topLeading, endPoint: .bottomTrailing)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
-struct CommandRow: View {
+// MARK: - Demo Style Command Row
+struct CommandRowDemo: View {
     let action: CommandAction
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: action.iconSystemName)
-                .font(.body)
-                .frame(width: 24)
-                .foregroundStyle(isSelected ? .white : .secondary)
+        HStack(spacing: 14) {
+            // Icon with colored background
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(action.iconColor.color.opacity(isSelected ? 1 : 0.8))
+                    .frame(width: 36, height: 36)
 
-            Text(action.title)
-                .font(.body)
-                .foregroundStyle(isSelected ? .white : .primary)
+                Image(systemName: action.iconSystemName)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(action.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                if !action.subtitle.isEmpty {
+                    Text(action.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Spacer()
 
-            if !action.isEnabled {
-                Text("Disabled")
-                    .font(.caption)
+            if !action.shortcut.isEmpty {
+                Text(action.shortcut)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(isSelected ? Color.accentColor : Color.clear)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Demo Style Recent Row
+struct RecentRowDemo: View {
+    let conversation: Conversation
+    let isSelected: Bool
+
+    private var displayName: String {
+        let person = conversation.person
+        if let nameEnd = person.firstIndex(of: "<") {
+            let name = String(person[..<nameEnd]).trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty { return name }
+        }
+        if let atIndex = person.firstIndex(of: "@") {
+            return String(person[..<atIndex])
+        }
+        return person
+    }
+
+    private var email: String {
+        let person = conversation.person
+        if let start = person.firstIndex(of: "<"), let end = person.firstIndex(of: ">") {
+            return String(person[person.index(after: start)..<end])
+        }
+        if person.contains("@") { return person }
+        return ""
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            SenderProfilePicture(email: conversation.person, size: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                if !email.isEmpty {
+                    Text(email)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
     }
 }
@@ -488,12 +562,19 @@ struct CommandRow: View {
         isPresented: .constant(true),
         searchText: .constant(""),
         actions: [
-            CommandAction(title: "New Email") {},
-            CommandAction(title: "Archive") {},
+            CommandAction(
+                title: "New Email", subtitle: "Compose a new message", iconSystemName: "envelope",
+                iconColor: .blue, shortcut: "⌘N"
+            ) {},
+            CommandAction(
+                title: "Mark All as Read", subtitle: "Clear all unread badges",
+                iconSystemName: "checkmark", iconColor: .green, shortcut: "⌘⇧R"
+            ) {},
         ],
         conversations: [],
         onSelect: { _ in },
         onSelectConversation: { _ in }
     )
-    .padding()
+    .padding(40)
+    .background(Color.black.opacity(0.5))
 }

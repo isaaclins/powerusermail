@@ -1,60 +1,152 @@
-# CI Pipeline - Runs on dev branch and PRs
+# CI Pipeline — uses Makefile for reproducible builds & tests
 name: CI
 
 on:
   push:
-    branches: [dev]
+    branches: [main, dev]
   pull_request:
     branches: [main, dev]
 
 jobs:
-  build:
-    name: Build & Test
-    runs-on: macos-15
-
+  docs-filter:
+    name: Detect Docs-Only Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.set.outputs.docs_only }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: List available Xcode versions
-        run: ls -la /Applications/ | grep Xcode
+      - name: Compute doc-only change set
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'performance-reports/**/*.md'
+              - '*.md'
+              - '*.rst'
+              - '*.txt'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+              - 'LICENSE'
+              - 'CHANGELOG.md'
+            non_docs:
+              - '**'
+              - '!docs/**'
+              - '!performance-reports/**/*.md'
+              - '!*.md'
+              - '!*.rst'
+              - '!*.txt'
+              - '!README.md'
+              - '!CONTRIBUTING.md'
+              - '!LICENSE'
+              - '!CHANGELOG.md'
 
-      - name: Select Xcode version
+      - name: Set docs_only output
+        id: set
         run: |
-          # Use the latest available Xcode 16.x
-          if [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-          elif [ -d "/Applications/Xcode.app" ]; then
-            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          if [ "${{ steps.filter.outputs.docs }}" = "true" ] && [ "${{ steps.filter.outputs.non_docs }}" != "true" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+  quicktests:
+    name: Quick Tests (FAST_TESTS)
+    runs-on: macos-latest
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/dev' || github.base_ref == 'dev') && needs.docs-filter.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Run quick tests (FAST_TESTS=1)
+        run: FAST_TESTS=1 make quicktest
+
+      - name: Upload quicktest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quicktest-results
+          path: build/Logs/Test/*.xcresult
+          retention-days: 7
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: macos-latest
+    needs: docs-filter
+    if: needs.docs-filter.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run unit tests
+        run: make unit-test
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: build/Logs/Test/*.xcresult
+          retention-days: 7
+
+  build-and-archive:
+    name: Build & Archive
+    runs-on: macos-latest
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
       - name: Build
-        run: |
-          xcodebuild build \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+        run: make build
+      
+      - name: Create archive
+        run: make archive
+      
+      - name: Upload archive
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerUserMail-archive
+          path: build/archive/*.xcarchive
+          retention-days: 30
 
-      - name: Run Tests
-        run: |
-          xcodebuild test \
-            -project PowerUserMail.xcodeproj \
-            -scheme PowerUserMail \
-            -destination 'platform=macOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            || echo "Tests completed (some may have been skipped)"
+  performance-tests:
+    name: Performance Tests
+    runs-on: macos-latest
+    needs: docs-filter
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && needs.docs-filter.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run performance tests
+        run: make perf || true
+      
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: |
+            performance-reports/
+            build/Logs/Test/*.xcresult
+          retention-days: 30
+
+
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

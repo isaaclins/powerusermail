@@ -37,24 +37,34 @@ struct ContentView: View {
                 }
             }
         }
-        .overlay(alignment: .center) {
+        .overlay {
             if isShowingCommandPalette {
-                CommandPaletteView(
-                    isPresented: $isShowingCommandPalette,
-                    searchText: $commandSearch,
-                    actions: commandActions,
-                    conversations: inboxViewModel.conversations,
-                    onSelect: { action in
-                        commandSearch = ""
-                        action.perform()
-                    },
-                    onSelectConversation: { conversation in
-                        commandSearch = ""
-                        selectedConversation = conversation
-                    }
-                )
-                .frame(maxWidth: 500)
-                .transition(.scale.combined(with: .opacity))
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            isShowingCommandPalette = false
+                        }
+
+                    CommandPaletteView(
+                        isPresented: $isShowingCommandPalette,
+                        searchText: $commandSearch,
+                        actions: commandActions,
+                        conversations: inboxViewModel.conversations,
+                        onSelect: { action in
+                            commandSearch = ""
+                            action.perform()
+                        },
+                        onSelectConversation: { conversation in
+                            commandSearch = ""
+                            selectedConversation = conversation
+                        }
+                    )
+                    .frame(maxWidth: 500)
+                }
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
             }
         }
         .sheet(isPresented: $isShowingCompose) {
@@ -65,7 +75,8 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isShowingAccountSwitcher) {
-            AccountSwitcherSheet(accountViewModel: accountViewModel, isPresented: $isShowingAccountSwitcher)
+            AccountSwitcherSheet(
+                accountViewModel: accountViewModel, isPresented: $isShowingAccountSwitcher)
         }
         .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("ToggleCommandPalette"))
@@ -80,30 +91,52 @@ struct ContentView: View {
             _ in
             toggleSidebar()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowAccountSwitcher"))) {
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("ShowAccountSwitcher"))
+        ) {
             _ in
             isShowingAccountSwitcher = true
         }
         // Conversation action notifications
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ArchiveCurrentConversation"))) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: Notification.Name("ArchiveCurrentConversation"))
+        ) { _ in
             archiveCurrentConversation()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PinCurrentConversation"))) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("PinCurrentConversation"))
+        ) { _ in
             pinCurrentConversation()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UnpinCurrentConversation"))) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("UnpinCurrentConversation"))
+        ) { _ in
             unpinCurrentConversation()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentUnread"))) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentUnread"))
+        ) { _ in
             markCurrentUnread()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentRead"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MarkCurrentRead")))
+        { _ in
             markCurrentRead()
         }
         // Handle notification tap to open conversation
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenConversation"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenConversation")))
+        { notification in
             if let from = notification.userInfo?["from"] as? String {
                 openConversationFromNotification(from: from)
+            }
+        }
+        // Handle authentication required notification
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("AuthenticationRequired"))
+        ) { notification in
+            if let email = notification.userInfo?["email"] as? String {
+                print("🔐 Authentication required for: \(email)")
+                // The InboxView will show the re-auth UI, but we could also show an alert here
             }
         }
         .onAppear {
@@ -114,7 +147,9 @@ struct ContentView: View {
         // CRITICAL: Handle account switching - clear all data for isolation
         .onChange(of: accountViewModel.selectedAccount?.id) { oldValue, newValue in
             if oldValue != newValue && oldValue != nil {
-                print("🔄 Account changed from \(oldValue?.uuidString ?? "none") to \(newValue?.uuidString ?? "none")")
+                print(
+                    "🔄 Account changed from \(oldValue?.uuidString ?? "none") to \(newValue?.uuidString ?? "none")"
+                )
                 // Clear selected conversation when switching accounts
                 selectedConversation = nil
                 // CRITICAL: Clear ALL inbox data IMMEDIATELY before new account loads
@@ -141,44 +176,27 @@ struct ContentView: View {
         let myEmail = accountViewModel.selectedAccount?.emailAddress ?? ""
         return NavigationSplitView(columnVisibility: $columnVisibility) {
             InboxView(
-                viewModel: inboxViewModel, service: service, myEmail: myEmail, selectedConversation: $selectedConversation
-            )
-            .navigationSplitViewColumnWidth(min: 280, ideal: 320)
-            .navigationTitle("Chats")
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button {
-                        isShowingAccountSwitcher = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            ProfilePictureView(account: accountViewModel.selectedAccount, size: 28)
-                            
-                            if let account = accountViewModel.selectedAccount {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(account.displayName.isEmpty ? "Account" : account.displayName)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .lineLimit(1)
-                                    Text(account.emailAddress)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
+                viewModel: inboxViewModel,
+                service: service,
+                myEmail: myEmail,
+                selectedConversation: $selectedConversation,
+                onReauthenticate: {
+                    if let account = accountViewModel.selectedAccount {
+                        Task {
+                            inboxViewModel.resetAuthState()
+                            await accountViewModel.authenticate(provider: account.provider)
+                            if accountViewModel.selectedAccount != nil {
+                                await inboxViewModel.loadInbox()
                             }
                         }
                     }
-                    .buttonStyle(.plain)
-                    .help("Switch Account")
+                },
+                onOpenCommandPalette: {
+                    toggleCommandPalette()
                 }
-                
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button(action: openCompose) {
-                        Label("New Email", systemImage: "square.and.pencil")
-                    }
-                    Button(action: toggleCommandPalette) {
-                        Label("Command Palette", systemImage: "command")
-                    }
-                }
-            }
+            )
+            .navigationSplitViewColumnWidth(min: 300, ideal: 340)
+            .toolbar(.hidden, for: .automatic)
         } detail: {
             if let conversation = selectedConversation,
                 let account = accountViewModel.selectedAccount
@@ -190,17 +208,18 @@ struct ContentView: View {
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right")
             }
         }
+        .navigationTitle("PowerUserMail")
     }
 
     private func openCompose() {
         isShowingCompose = true
     }
-    
+
     private func toggleSidebar() {
         // Debounce to prevent rapid toggling breaking the layout
         guard !isTogglingsidebar else { return }
         isTogglingsidebar = true
-        
+
         withAnimation(.easeInOut(duration: 0.2)) {
             if columnVisibility == .detailOnly {
                 columnVisibility = .all
@@ -208,7 +227,7 @@ struct ContentView: View {
                 columnVisibility = .detailOnly
             }
         }
-        
+
         // Re-enable after animation completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             isTogglingsidebar = false
@@ -252,8 +271,9 @@ struct ContentView: View {
     private func toggleCommandPalette() {
         // Use commands from the registry, passing context
         let hasConversation = selectedConversation != nil
-        commandActions = CommandRegistry.shared.getCommands(hasSelectedConversation: hasConversation)
-        
+        commandActions = CommandRegistry.shared.getCommands(
+            hasSelectedConversation: hasConversation)
+
         // Add context-specific commands
         if hasConversation {
             commandActions.insert(
@@ -266,18 +286,19 @@ struct ContentView: View {
                 }, at: 0
             )
         }
-        
+
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             isShowingCommandPalette.toggle()
         }
     }
 
     private func configureCommands() {
-        commandActions = CommandRegistry.shared.getCommands(hasSelectedConversation: selectedConversation != nil)
+        commandActions = CommandRegistry.shared.getCommands(
+            hasSelectedConversation: selectedConversation != nil)
     }
-    
+
     // MARK: - Conversation Actions
-    
+
     private func archiveCurrentConversation() {
         guard let conversation = selectedConversation else { return }
         // TODO: Implement actual archive API call
@@ -285,7 +306,7 @@ struct ContentView: View {
         selectedConversation = nil
         print("Archived conversation: \(conversation.person)")
     }
-    
+
     private func pinCurrentConversation() {
         guard let conversation = selectedConversation else { return }
         ConversationStateStore.shared.togglePinned(conversationId: conversation.id)
@@ -293,7 +314,7 @@ struct ContentView: View {
             print("Pinned conversation: \(conversation.person)")
         }
     }
-    
+
     private func unpinCurrentConversation() {
         guard let conversation = selectedConversation else { return }
         if ConversationStateStore.shared.isPinned(conversationId: conversation.id) {
@@ -301,7 +322,7 @@ struct ContentView: View {
             print("Unpinned conversation: \(conversation.person)")
         }
     }
-    
+
     private func markCurrentUnread() {
         guard let conversation = selectedConversation else { return }
         if ConversationStateStore.shared.isRead(conversationId: conversation.id) {
@@ -309,18 +330,18 @@ struct ContentView: View {
             print("Marked as unread: \(conversation.person)")
         }
     }
-    
+
     private func markCurrentRead() {
         guard let conversation = selectedConversation else { return }
         ConversationStateStore.shared.markAsRead(conversationId: conversation.id)
         print("Marked as read: \(conversation.person)")
     }
-    
+
     private func openConversationFromNotification(from: String) {
         // Find conversation matching the sender
         if let conversation = inboxViewModel.conversations.first(where: { conv in
-            conv.person.localizedCaseInsensitiveContains(from) ||
-            conv.messages.contains { $0.from.localizedCaseInsensitiveContains(from) }
+            conv.person.localizedCaseInsensitiveContains(from)
+                || conv.messages.contains { $0.from.localizedCaseInsensitiveContains(from) }
         }) {
             selectedConversation = conversation
             // Bring app to front
