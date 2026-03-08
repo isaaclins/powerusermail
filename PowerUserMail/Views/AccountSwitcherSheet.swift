@@ -257,6 +257,7 @@ struct AccountSwitcherSheet: View {
         .sheet(isPresented: $accountViewModel.showIMAPConfigSheet) {
             IMAPConfigSheet(accountViewModel: accountViewModel)
         }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 

@@ -31,10 +31,12 @@ enum InboxFilter: String, CaseIterable {
 }
 
 struct InboxView: View {
+    @EnvironmentObject private var settingsStore: SettingsStore
     @ObservedObject var viewModel: InboxViewModel
     @Binding var selectedConversation: Conversation?
     @State private var activeFilter: InboxFilter = .unread  // Demo shows Unread selected by default
     @State private var searchText = ""
+    @State private var pendingReadTask: Task<Void, Never>?
     @ObservedObject private var stateStore = ConversationStateStore.shared
     @StateObject private var notificationManager = NotificationManager.shared
 
@@ -146,9 +148,8 @@ struct InboxView: View {
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 viewModel.select(conversation: conversation)
                                 selectedConversation = conversation
-                                ConversationStateStore.shared.markAsRead(
-                                    conversationId: conversation.id)
                             }
+                            scheduleMarkAsRead(for: conversation.id)
                         }
                     }
                 }
@@ -258,6 +259,9 @@ struct InboxView: View {
                 NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             ) { _ in
                 Task { await notificationManager.refreshAuthorizationStatus() }
+                if settingsStore.payload.autoRefreshOnWake {
+                    Task { await viewModel.loadInbox() }
+                }
             }
         #endif
         .onAppear {
@@ -329,15 +333,17 @@ struct InboxView: View {
         withAnimation(.easeInOut(duration: 0.15)) {
             viewModel.select(conversation: target)
             selectedConversation = target
-            ConversationStateStore.shared.markAsRead(conversationId: target.id)
         }
+        scheduleMarkAsRead(for: target.id)
     }
 
     // MARK: - Top Bar (Search + Settings)
     private var topBar: some View {
         HStack(spacing: 8) {
             Button {
-                onOpenCommandPalette?()
+                if settingsStore.payload.commandPaletteEnabled {
+                    onOpenCommandPalette?()
+                }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -353,15 +359,13 @@ struct InboxView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
-                        .background(Color.secondary.opacity(0.2))
+                        .background(Color(nsColor: .controlBackgroundColor))
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(!settingsStore.payload.commandPaletteEnabled)
 
             settingsButton
         }
@@ -376,24 +380,18 @@ struct InboxView: View {
             if #available(macOS 14.0, *) {
                 SettingsLink {
                     Image(systemName: "gearshape")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, height: 36)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .frame(width: 18, height: 18)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
                 .help("Settings")
             } else {
                 Button {
                     openAppSettings()
                 } label: {
                     Image(systemName: "gearshape")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, height: 36)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .frame(width: 18, height: 18)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
                 .help("Settings")
             }
         #else
@@ -461,24 +459,30 @@ struct InboxView: View {
         .shadow(color: .black.opacity(0.2), radius: 24)
     }
 
-    // MARK: - Filter Bar (demo style)
     private var filterBar: some View {
-        HStack(spacing: 8) {
-            ForEach(InboxFilter.allCases, id: \.self) { filter in
-                FilterPill(
-                    filter: filter,
-                    isActive: activeFilter == filter,
-                    action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            activeFilter = filter
-                        }
-                    }
-                )
+        HStack {
+            Picker("Mailbox Filter", selection: $activeFilter) {
+                ForEach(InboxFilter.allCases, id: \.self) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
             }
-            Spacer()
+            .pickerStyle(.segmented)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private func scheduleMarkAsRead(for conversationId: String) {
+        pendingReadTask?.cancel()
+        let delay = settingsStore.payload.markAsReadDelay.seconds
+
+        pendingReadTask = Task { @MainActor in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
+            }
+            guard !Task.isCancelled else { return }
+            ConversationStateStore.shared.markAsRead(conversationId: conversationId)
+        }
     }
 
     /// Extract a cleaner display name from email addresses
@@ -510,45 +514,7 @@ struct InboxView: View {
     }
 }
 
-// MARK: - Filter Pill (demo style - simpler)
-struct FilterPill: View {
-    let filter: InboxFilter
-    let isActive: Bool
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text("⌘\(filter.shortcutNumber)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(isActive ? .white.opacity(0.9) : .secondary)
-
-                Text(filter.rawValue)
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        isActive
-                            ? Color.accentColor : Color.secondary.opacity(isHovered ? 0.15 : 0.1))
-            )
-            .foregroundStyle(isActive ? .white : .primary)
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-// MARK: - Conversation Row (demo style)
+// MARK: - Conversation Row
 struct ConversationRow: View {
     let conversation: Conversation
     let isSelected: Bool
@@ -646,7 +612,11 @@ struct ConversationRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(backgroundColor)
+                .fill(
+                    isSelected
+                        ? AnyShapeStyle(UIStyle.selectedFill)
+                        : (isHovered ? AnyShapeStyle(UIStyle.hoverFill) : AnyShapeStyle(Color.clear))
+                )
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
@@ -731,16 +701,6 @@ struct ConversationRow: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
-        }
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.2)
-        } else if isHovered {
-            return Color.primary.opacity(0.05)
-        } else {
-            return Color.clear
         }
     }
 }

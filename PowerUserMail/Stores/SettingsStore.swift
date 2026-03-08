@@ -158,6 +158,17 @@ enum AppTheme: String, CaseIterable, Codable, Identifiable {
         case .dark: return "Dark"
         }
     }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            return nil
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
 }
 
 enum BadgeMode: String, CaseIterable, Codable, Identifiable {
@@ -213,6 +224,16 @@ enum RemoteImagesPolicy: String, CaseIterable, Codable, Identifiable {
     var displayName: String { rawValue.capitalized }
 }
 
+extension SettingsPayload {
+    var loadsRemoteImagesAutomatically: Bool {
+        remoteImagesPolicy == .always
+    }
+
+    var allowsRemoteImagesOnDemand: Bool {
+        remoteImagesPolicy != .block
+    }
+}
+
 struct QuietHours: Codable, Equatable {
     var enabled: Bool = false
     var startHour: Int = 22
@@ -242,4 +263,3 @@ struct FeatureFlag: Identifiable, Codable, Equatable {
     var enabled: Bool
     var description: String
 }
-

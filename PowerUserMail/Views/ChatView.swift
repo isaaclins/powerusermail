@@ -3,6 +3,7 @@ import SwiftUI
 import WebKit
 
 struct ChatView: View {
+    @EnvironmentObject private var settingsStore: SettingsStore
     let conversation: Conversation
     let service: MailService
     let myEmail: String
@@ -100,7 +101,6 @@ struct ChatView: View {
 
             Divider()
 
-            // Reply Area (demo style)
             HStack(alignment: .center, spacing: 12) {
                 MessageInputField(
                     text: $replyText,
@@ -110,18 +110,14 @@ struct ChatView: View {
                 .frame(minHeight: 40, maxHeight: 120)
 
                 Button(action: sendReply) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(replyText.isEmpty ? Color.gray.opacity(0.5) : Color.accentColor)
-                        .clipShape(Circle())
+                    Label("Send", systemImage: "paperplane.fill")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
                 .disabled(replyText.isEmpty || isSending)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle("")
         .toolbar(.hidden, for: .automatic)
@@ -228,10 +224,12 @@ struct ChatView: View {
 }
 
 struct ChatBubble: View {
+    @EnvironmentObject private var settingsStore: SettingsStore
     let email: Email
     let myEmail: String
 
     @State private var contentHeight: CGFloat = 100
+    @State private var allowRemoteImages = false
 
     var isMe: Bool {
         email.from.localizedCaseInsensitiveContains(myEmail)
@@ -392,13 +390,17 @@ struct ChatBubble: View {
 
     /// Check if content is HTML
     var isHTMLContent: Bool {
-        let body = cleanedBody.lowercased()
-        return body.contains("<html") || body.contains("<body") || body.contains("<div")
-            || body.contains("<table") || body.contains("<p>") || body.contains("<br")
+        MessageRenderEngine.shared.isSimple(cleanedBody) == false
     }
 
-    private var bubbleColor: Color {
-        isMe ? Color.accentColor : Color(nsColor: .systemGray).opacity(0.35)
+    private var effectiveAllowRemoteImages: Bool {
+        allowRemoteImages || settingsStore.payload.loadsRemoteImagesAutomatically
+    }
+
+    private var containsRemoteImages: Bool {
+        cleanedBody.localizedCaseInsensitiveContains("<img")
+            && (cleanedBody.localizedCaseInsensitiveContains("http://")
+                || cleanedBody.localizedCaseInsensitiveContains("https://"))
     }
 
     var body: some View {
@@ -416,18 +418,30 @@ struct ChatBubble: View {
                 }
 
                 if isHTMLContent {
-                    // Use WebView for HTML content with scroll passthrough
-                    ScrollTransparentWebView(
-                        htmlContent: cleanedBody,
-                        isMe: isMe,
+                    RenderedHTMLView(
+                        rawHTML: cleanedBody,
+                        allowJavaScript: false,
+                        allowRemoteImages: effectiveAllowRemoteImages,
+                        fontSize: settingsStore.payload.defaultFontSize,
                         contentHeight: $contentHeight
                     )
                     .frame(height: contentHeight)
+
+                    if containsRemoteImages
+                        && !effectiveAllowRemoteImages
+                        && settingsStore.payload.allowsRemoteImagesOnDemand
+                    {
+                        Button("Load Remote Content") {
+                            allowRemoteImages = true
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
                 } else {
-                    // Use plain Text for simple content
                     Text(displayText)
-                        .font(.body)
-                        .foregroundStyle(isMe ? .white : .primary)
+                        .font(.system(size: settingsStore.payload.defaultFontSize))
+                        .foregroundStyle(.primary)
                         .lineLimit(nil)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -435,16 +449,20 @@ struct ChatBubble: View {
 
                 Text(email.receivedAt, style: .time)
                     .font(.caption2)
-                    .foregroundStyle(isMe ? .white.opacity(0.8) : .secondary)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                ChatBubbleShape(isMe: isMe)
-                    .fill(bubbleColor)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isMe ? Color.accentColor.opacity(0.10) : Color(nsColor: .controlBackgroundColor))
             )
-            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(UIStyle.cardStroke, lineWidth: 1)
+            )
+            .shadow(color: UIStyle.subtleShadow, radius: 2, x: 0, y: 1)
             .frame(maxWidth: isHTMLContent ? 600 : 450, alignment: isMe ? .trailing : .leading)
             .contextMenu {
                 if PromotedThreadStore.shared.isPromoted(threadId: email.threadId) {
@@ -469,6 +487,9 @@ struct ChatBubble: View {
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+        .onAppear {
+            allowRemoteImages = settingsStore.payload.loadsRemoteImagesAutomatically
+        }
     }
 }
 

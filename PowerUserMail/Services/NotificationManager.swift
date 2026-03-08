@@ -150,12 +150,17 @@ final class NotificationManager: ObservableObject {
 
     private func sendNotification(for email: Email) {
         guard isAuthorized else { return }
+        let settings = SettingsStore.shared.payload
+        guard settings.notificationsEnabled else { return }
+        guard !isWithinQuietHours(settings.quietHours) else { return }
 
         let content = UNMutableNotificationContent()
         content.title = extractSenderName(from: email.from)
         content.subtitle = email.subject
         content.body = email.preview.isEmpty ? email.body.prefix(100).description : email.preview
-        content.sound = .default
+        if settings.notificationSoundEnabled {
+            content.sound = .default
+        }
         content.categoryIdentifier = "NEW_EMAIL"
 
         // Add user info for handling tap
@@ -204,7 +209,16 @@ final class NotificationManager: ObservableObject {
     // MARK: - Badge Management
 
     func updateBadgeCount(_ count: Int) {
-        UNUserNotificationCenter.current().setBadgeCount(count) { error in
+        let settings = SettingsStore.shared.payload
+        let effectiveCount: Int
+        switch settings.badgeMode {
+        case .none:
+            effectiveCount = 0
+        default:
+            effectiveCount = count
+        }
+
+        UNUserNotificationCenter.current().setBadgeCount(effectiveCount) { error in
             if let error = error {
                 print("❌ Failed to update badge: \(error)")
             }
@@ -213,6 +227,19 @@ final class NotificationManager: ObservableObject {
 
     func clearBadge() {
         updateBadgeCount(0)
+    }
+
+    private func isWithinQuietHours(_ quietHours: QuietHours) -> Bool {
+        guard quietHours.enabled else { return false }
+
+        let hour = Calendar.current.component(.hour, from: Date())
+        if quietHours.startHour == quietHours.endHour {
+            return true
+        }
+        if quietHours.startHour < quietHours.endHour {
+            return (quietHours.startHour..<quietHours.endHour).contains(hour)
+        }
+        return hour >= quietHours.startHour || hour < quietHours.endHour
     }
 
     // MARK: - Account Switching

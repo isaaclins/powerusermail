@@ -1,13 +1,15 @@
 import SwiftUI
 
 struct ComposeView: View {
+    @EnvironmentObject private var settingsStore: SettingsStore
+    @EnvironmentObject private var accountViewModel: AccountViewModel
     @ObservedObject var viewModel: ComposeViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showCcBcc = false
+    @State private var didApplySignature = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
             HStack {
                 Button("Cancel") {
                     dismiss()
@@ -38,14 +40,12 @@ struct ComposeView: View {
                 .keyboardShortcut(.return, modifiers: .command)
             }
             .padding()
-            .background(.ultraThinMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
 
             Divider()
 
-            // Fields
             ScrollView {
                 VStack(spacing: 0) {
-                    // To
                     HStack {
                         Text("To:")
                             .foregroundStyle(.secondary)
@@ -61,14 +61,12 @@ struct ComposeView: View {
                                 }
                             )
                         )
-                        .textFieldStyle(.plain)
+                        .textFieldStyle(.roundedBorder)
 
                         Button(action: { withAnimation { showCcBcc.toggle() } }) {
                             Text(showCcBcc ? "Hide Cc/Bcc" : "Cc/Bcc")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
                     }
                     .padding()
 
@@ -89,7 +87,7 @@ struct ComposeView: View {
                                     }
                                 )
                             )
-                            .textFieldStyle(.plain)
+                            .textFieldStyle(.roundedBorder)
                         }
                         .padding()
 
@@ -110,7 +108,7 @@ struct ComposeView: View {
                                     }
                                 )
                             )
-                            .textFieldStyle(.plain)
+                            .textFieldStyle(.roundedBorder)
                         }
                         .padding()
                     }
@@ -123,23 +121,32 @@ struct ComposeView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 50, alignment: .trailing)
                         TextField("", text: $viewModel.draft.subject)
-                            .textFieldStyle(.plain)
+                            .textFieldStyle(.roundedBorder)
                             .font(.headline)
                     }
                     .padding()
 
                     Divider()
 
-                    // Body
                     TextEditor(text: $viewModel.draft.body)
-                        .font(.body)
+                        .font(
+                            .custom(
+                                settingsStore.payload.defaultFontName,
+                                size: settingsStore.payload.defaultFontSize,
+                                relativeTo: .body
+                            )
+                        )
                         .padding()
                         .frame(minHeight: 300)
                 }
             }
+            .background(Color(nsColor: .textBackgroundColor))
         }
         .frame(minWidth: 600, minHeight: 500)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            applySignatureIfNeeded()
+        }
         .alert(
             "Error",
             isPresented: Binding(
@@ -151,5 +158,16 @@ struct ComposeView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    private func applySignatureIfNeeded() {
+        guard !didApplySignature, viewModel.draft.body.isEmpty else { return }
+        guard let email = accountViewModel.selectedAccount?.emailAddress else { return }
+        guard let signature = settingsStore.payload.perAccountSignature[email], !signature.isEmpty else {
+            return
+        }
+
+        viewModel.draft.body = "\n\n\(signature)"
+        didApplySignature = true
     }
 }

@@ -9,8 +9,9 @@ import CoreData
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var accountViewModel = AccountViewModel()
-    @StateObject private var inboxViewModel = InboxViewModel()
+    @EnvironmentObject private var accountViewModel: AccountViewModel
+    @EnvironmentObject private var inboxViewModel: InboxViewModel
+    @EnvironmentObject private var settingsStore: SettingsStore
     @State private var selectedConversation: Conversation?
     @State private var isShowingCompose = false
     @State private var isShowingAccountSwitcher = false
@@ -37,6 +38,7 @@ struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(settingsStore.payload.theme.colorScheme)
         .overlay {
             if isShowingCommandPalette {
                 ZStack {
@@ -143,6 +145,7 @@ struct ContentView: View {
             // Load all command plugins
             CommandLoader.loadAll()
             configureCommands()
+            settingsStore.payload.lastActiveEmail = accountViewModel.selectedAccount?.emailAddress ?? ""
         }
         // CRITICAL: Handle account switching - clear all data for isolation
         .onChange(of: accountViewModel.selectedAccount?.id) { oldValue, newValue in
@@ -165,6 +168,7 @@ struct ContentView: View {
                 inboxViewModel.clearAllData()
                 NotificationManager.shared.resetForNewAccount()
             }
+            settingsStore.payload.lastActiveEmail = newEmail ?? ""
         }
     }
 
@@ -269,6 +273,8 @@ struct ContentView: View {
     }
 
     private func toggleCommandPalette() {
+        guard settingsStore.payload.commandPaletteEnabled else { return }
+
         // Use commands from the registry, passing context
         let hasConversation = selectedConversation != nil
         commandActions = CommandRegistry.shared.getCommands(
@@ -352,6 +358,9 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().environment(
-        \.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
+        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environmentObject(AccountViewModel())
+        .environmentObject(InboxViewModel())
+        .environmentObject(SettingsStore())
 }

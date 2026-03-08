@@ -35,7 +35,7 @@ struct SettingsWindowView: View {
             .listStyle(.sidebar)
             .frame(minWidth: 220)
         } detail: {
-            ScrollView {
+            Form {
                 VStack(alignment: .leading, spacing: 24) {
                     switch selection {
                     case .accounts:
@@ -143,7 +143,8 @@ private struct AccountsSettingsPane: View {
                     }
                 }
                 .padding()
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
             HStack(spacing: 12) {
@@ -242,11 +243,6 @@ private struct MailHandlingSettingsPane: View {
                 }
             }
 
-            Button("Create Category") { addCategory() }
-            Button("Edit Category") { } // Placeholder for future editor
-            Button("Delete Category") { deleteLastCategory() }
-            Button("Reorder Categories") { } // Placeholder
-
             if !settingsStore.payload.categories.isEmpty {
                 VStack(alignment: .leading) {
                     Text("Categories")
@@ -256,6 +252,16 @@ private struct MailHandlingSettingsPane: View {
                     }
                 }
             }
+
+            HStack {
+                Button("Add Category") { addCategory() }
+                Button("Remove Last") { deleteLastCategory() }
+                    .disabled(settingsStore.payload.categories.isEmpty)
+            }
+
+            Text("Rules and category editing are not implemented yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -455,18 +461,12 @@ private struct UpdatesDiagnosticsPane: View {
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")
             }
 
-            Button("Check for updates") {
-                // Placeholder
-            }
+            Text("Automatic update checks are not configured in this build.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Button("View logs") { openLogsFolder() }
             Button("Save/export logs") { exportLogs() }
-            Button("Send example notification") {
-                NotificationManager.shared.checkForNewMessages(
-                    conversations: [],
-                    myEmail: ""
-                )
-            }
         }
     }
 
@@ -563,4 +563,3 @@ private func header(title: String, subtitle: String) -> some View {
         Text(subtitle).foregroundStyle(.secondary)
     }
 }
-

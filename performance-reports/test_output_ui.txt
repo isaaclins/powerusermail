@@ -5606,3 +5606,4 @@ Test Case '-[PowerUserMailUITests.PerformanceStressTests testRapidCommandPalette
     t =     7.75s     Find the Target Application 'com.isaaclins.PowerUserMail'
     t =     7.79s     Check for interrupting elements affecting "PowerUserMail" Application
     t =     7.79s     Synthesize event
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance

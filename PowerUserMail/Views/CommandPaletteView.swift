@@ -348,8 +348,12 @@ struct CommandPaletteView: View {
             .frame(maxHeight: 400)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 8)
         .frame(width: 500)
         .onAppear {
             selectedIndex = 0
@@ -483,11 +487,11 @@ struct CommandRowDemo: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                .fill(isSelected ? UIStyle.selectedFill : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(isSelected ? UIStyle.cardStroke : Color.clear, lineWidth: 1)
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
@@ -545,11 +549,11 @@ struct RecentRowDemo: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                .fill(isSelected ? UIStyle.selectedFill : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(isSelected ? UIStyle.cardStroke : Color.clear, lineWidth: 1)
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
