@@ -38,6 +38,12 @@ dev (development) → main (releases)
 - 🏗️ Build release version
 - 📦 Create app archive
 - 🏷️ Tag with version
+
+## Support development
+
+If PowerUserMail saves you time, tips fund releases and bugfixes:
+
+- [Buy Me a Coffee](https://buymeacoffee.com/isaaclins)
 - 🚀 Publish GitHub Release
 
 ## Quick Commands
