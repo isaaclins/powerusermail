@@ -22,6 +22,9 @@ final class SettingsStore: ObservableObject {
         } else {
             payload = SettingsPayload()
         }
+        if DemoMode.isEnabled, let theme = DemoMode.theme {
+            payload.theme = theme
+        }
     }
 
     // MARK: - Derived Bindings
@@ -89,6 +92,7 @@ final class SettingsStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
+        guard !DemoMode.isEnabled else { return }
         if let data = try? JSONEncoder().encode(payload) {
             defaults.set(data, forKey: storageKey)
         }

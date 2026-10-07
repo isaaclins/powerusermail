@@ -78,6 +78,7 @@ final class NotificationManager: ObservableObject {
 
     /// Check for new messages and send notifications
     func checkForNewMessages(conversations: [Conversation], myEmail: String) {
+        guard !DemoMode.isEnabled else { return }
         let allIDs = conversations.flatMap { $0.messages.map { $0.id } }
 
         // First load - just track all messages, don't notify
@@ -209,6 +210,7 @@ final class NotificationManager: ObservableObject {
     // MARK: - Badge Management
 
     func updateBadgeCount(_ count: Int) {
+        guard !DemoMode.isEnabled else { return }
         let settings = SettingsStore.shared.payload
         let effectiveCount: Int
         switch settings.badgeMode {
