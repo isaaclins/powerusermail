@@ -433,6 +433,20 @@ img {
     background: #0a0a0b;
 }
 
+/* Real window capture: it brings its own rounded corners and title bar */
+.mockup-window.mockup-real {
+    background: none;
+    border: none;
+    border-radius: 12px;
+}
+
+.mockup-real .mockup-screenshot {
+    display: block;
+    height: auto;
+    object-fit: contain;
+    background: none;
+}
+
 .mockup-reflection {
     position: absolute;
     bottom: -100px;
@@ -818,6 +832,23 @@ section {
         opacity: 1;
         transform: translateX(0);
     }
+}
+
+/* Real command palette capture */
+.palette-shot {
+    display: block;
+    width: 100%;
+    max-width: 420px;
+    height: auto;
+    border-radius: 14px;
+    box-shadow:
+        0 25px 80px -12px rgba(0, 0, 0, 0.8),
+        0 0 60px rgba(168, 85, 247, 0.15);
+    animation: paletteFloat 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .palette-shot { animation: none; }
 }
 
 /* Hover effect on palette window */
@@ -1226,8 +1257,15 @@ kbd {
         font-size: 0.75rem;
     }
     
-    /* Hero visual / mockup - HIDE on mobile */
+    /* Hero visual: the real app, below the call to action */
     .hero-visual {
+        order: 1;
+        width: 100%;
+        max-width: 100%;
+        margin-top: 8px;
+    }
+
+    .mockup-reflection {
         display: none;
     }
     
