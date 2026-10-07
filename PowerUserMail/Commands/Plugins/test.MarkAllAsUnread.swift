@@ -2,16 +2,16 @@
 //  test.MarkAllAsUnread.swift
 //  PowerUserMail
 //
-//  Temporary test command to mark all conversations as unread.
+//  Command to mark all conversations as unread.
 //
 
 import Foundation
 
 struct TestMarkAllAsUnreadCommand: CommandPlugin {
     let id = "test-mark-all-unread"
-    let title = "Mark All as Unread (Test)"
+    let title = "Mark All as Unread"
     let subtitle = "Set all conversations to unread"
-    let keywords = ["test", "mark", "unread", "all"]
+    let keywords = ["mark", "unread", "all"]
     let iconSystemName = "envelope.badge"
     let iconColor: CommandIconColor = .orange
     let shortcut = ""

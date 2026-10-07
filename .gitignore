@@ -20,3 +20,6 @@ project.xcworkspace/xcuserdata/
 
 # User settings
 xcuserdata/
+
+# Screenshot captures (scripts/screenshots.sh keeps only the .webp files)
+docs/screenshots/*.png

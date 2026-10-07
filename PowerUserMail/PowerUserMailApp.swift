@@ -16,6 +16,12 @@ import UserNotifications
 // App Delegate for handling notifications
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The sample mailbox keeps everything in memory and never asks for permissions
+        guard !DemoMode.isEnabled else {
+            DemoMode.prepareWindow()
+            return
+        }
+
         // Set notification delegate
         UNUserNotificationCenter.current().delegate = self
 

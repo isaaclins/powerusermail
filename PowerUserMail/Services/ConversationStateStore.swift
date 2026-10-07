@@ -136,6 +136,7 @@ final class ConversationStateStore: ObservableObject {
     // MARK: - Persistence
     
     private func loadFromDefaults() {
+        guard !DemoMode.isEnabled else { return }
         if let pinned = UserDefaults.standard.array(forKey: pinnedKey) as? [String] {
             pinnedConversationIDs = Set(pinned)
         }
@@ -151,6 +152,7 @@ final class ConversationStateStore: ObservableObject {
     }
     
     private func saveToDefaults() {
+        guard !DemoMode.isEnabled else { return }
         UserDefaults.standard.set(Array(pinnedConversationIDs), forKey: pinnedKey)
         UserDefaults.standard.set(Array(mutedConversationIDs), forKey: mutedKey)
         UserDefaults.standard.set(Array(readConversationIDs), forKey: readKey)

@@ -19,6 +19,13 @@ final class AccountViewModel: ObservableObject {
     private let accountsKey = "savedAccounts"
 
     init() {
+        if DemoMode.isEnabled {
+            accounts = [DemoMode.account]
+            services[DemoMode.account.id.uuidString] = DemoMailService()
+            selectedAccount = DemoMode.account
+            return
+        }
+
         // Load stored accounts from UserDefaults
         loadAccounts()
 
@@ -53,6 +60,7 @@ final class AccountViewModel: ObservableObject {
     }
 
     private func saveAccounts() {
+        guard !DemoMode.isEnabled else { return }
         if let data = try? JSONEncoder().encode(accounts) {
             UserDefaults.standard.set(data, forKey: accountsKey)
         }
